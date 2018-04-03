@@ -82,7 +82,7 @@ cdef class KyotoTycoon(object):
         conn.connect((self.host, self.port))
         if self.timeout:
             conn.settimeout(self.timeout)
-        self._socket = conn.makefile()
+        self._socket = conn.makefile('rwb')
         return True
 
     def close(self):
