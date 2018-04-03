@@ -64,7 +64,7 @@ cdef class KyotoTycoon(object):
         _socket
 
     def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False):
-        self.host = host
+        self.host = encode(host)
         self.port = port
         self.timeout = timeout
         self._raw = raw
