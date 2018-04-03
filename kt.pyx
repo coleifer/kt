@@ -39,6 +39,18 @@ cdef inline bytes encode(obj):
         result = bytes(obj)
     return result
 
+cdef inline unicode decode(obj):
+    cdef unicode result
+    if PyBytes_Check(obj):
+        result = obj.decode('utf-8')
+    elif PyUnicode_Check(obj):
+        result = <unicode>obj
+    elif obj is None:
+        return None
+    else:
+        result = str(obj)
+    return result
+
 
 class KyotoTycoonError(Exception): pass
 
@@ -57,6 +69,10 @@ cdef class KyotoTycoon(object):
         self.timeout = timeout
         self._raw = raw
         self._socket = None
+
+    def __del__(self):
+        if self._socket is not None:
+            self._socket.close()
 
     def open(self):
         if self._socket is not None:
@@ -135,6 +151,7 @@ cdef class KyotoTycoon(object):
         self._check_response(KT_GET_BULK)
 
         cdef:
+            bytes bkey, bvalue
             int nkeys, nkey, nval
             dict result = {}
 
@@ -142,12 +159,12 @@ cdef class KyotoTycoon(object):
         nkeys, = s_unpack('!I', read(4))
         for _ in range(nkeys):
             _, nkey, nval, _ = s_unpack('!HIIq', read(18))
-            key = read(nkey)
-            value = read(nval)
+            bkey = read(nkey)
+            bvalue = read(nval)
             if self._raw:
-                result[key] = value
+                result[bkey] = bvalue
             else:
-                result[key] = msgpack.unpackb(value)
+                result[decode(bkey)] = msgpack.unpackb(bvalue)
 
         return result
 
@@ -157,6 +174,15 @@ cdef class KyotoTycoon(object):
 
     def mget(self, keys, db=0):
         return self._get(keys, db)
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise ValueError('Expected tuple of size 2 (key, dbnum)')
+            key, db = key
+        else:
+            db = 0
+        return self.get(key, db)
 
     cdef _set(self, dict data, int db, bint async, expire_time):
         cdef:
@@ -177,6 +203,23 @@ cdef class KyotoTycoon(object):
 
     def set(self, key, value, db=0, async=False, expire_time=None):
         return self._set({key: value}, db, async, expire_time)
+
+    def __setitem__(self, key, value):
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise ValueError('Expected tuple of size 2 (key, dbnum)')
+            key, db = key
+        else:
+            db = 0
+
+        if isinstance(value, tuple):
+            if len(value) != 2:
+                raise ValueError('Expected tuple of size 2 (val, expire)')
+            value, expire = value
+        else:
+            expire = None
+
+        self._set({key: value}, db, False, expire)
 
     def mset(self, __data=None, **kwargs):
         db = kwargs.pop('db', 0)
@@ -209,3 +252,47 @@ cdef class KyotoTycoon(object):
 
     def mremove(self, keys, db=0, async=False):
         return self._remove(keys, db, async)
+
+    def __delitem__(self, key):
+        if isinstance(key, tuple):
+            if len(key) != 2:
+                raise ValueError('Expected tuple of size 2 (key, dbnum)')
+            key, db = key
+        else:
+            db = 0
+        self.remove(key, db)
+
+    def run_script(self, name, data=None):
+        cdef:
+            bytes bkey, bvalue
+            bytes bname = encode(name)
+            dict result
+            int klen, vlen, nkeys, i
+
+        data = data or {}
+        buf = io.BytesIO()
+        buf.write(s_pack('!BIII', KT_PLAY_SCRIPT, 0, len(bname), len(data)))
+        buf.write(bname)
+        for key in data:
+            bkey = encode(key)
+            bvalue = encode(data[key])
+            buf.write(s_pack('!II', len(bkey), len(bvalue)))
+            buf.write(bkey)
+            buf.write(bvalue)
+
+        self._socket.write(buf.getvalue())
+        self._socket.flush()
+        self._check_response(KT_PLAY_SCRIPT)
+
+        read = self._socket.read
+        nkeys, = struct.unpack('!I', read(4))
+        result = {}
+        for i in range(nkeys):
+            klen, vlen = s_unpack('!II', read(8))
+            bkey = read(klen)
+            bvalue = read(vlen)
+            if self._raw:
+                result[bkey] = bvalue
+            else:
+                result[decode(bkey)] = bvalue
+        return result
