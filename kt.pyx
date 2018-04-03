@@ -122,7 +122,7 @@ cdef class KyotoTycoon(object):
         else:
             raise KyotoTycoonError('Unexpected server response: %x' % magic)
 
-    def get(self, keys, db=0):
+    cdef _get(self, keys, int db):
         cdef:
             bytes request
 
@@ -151,7 +151,14 @@ cdef class KyotoTycoon(object):
 
         return result
 
-    def set(self, dict data, db=0, async=False, expire_time=None):
+    def get(self, key, db=0):
+        response = self._get((key,), db)
+        return response.get(key)
+
+    def mget(self, keys, db=0):
+        return self._get(keys, db)
+
+    cdef _set(self, dict data, int db, bint async, expire_time):
         cdef:
             bytes request
             int flags
@@ -168,7 +175,18 @@ cdef class KyotoTycoon(object):
         self._check_response(KT_SET_BULK)
         return s_unpack('!I', self._socket.read(4))[0]
 
-    def remove(self, keys, db=0, async=False):
+    def set(self, key, value, db=0, async=False, expire_time=None):
+        return self._set({key: value}, db, async, expire_time)
+
+    def mset(self, __data=None, **kwargs):
+        db = kwargs.pop('db', 0)
+        async = kwargs.pop('async', False)
+        expire_time = kwargs.pop('expire_time', None)
+        if __data:
+            kwargs.update(__data)
+        return self._set(kwargs, db, async, expire_time)
+
+    cdef _remove(self, keys, int db, bint async):
         cdef:
             bytes request
             int flags
@@ -185,3 +203,9 @@ cdef class KyotoTycoon(object):
 
         self._check_response(KT_REMOVE_BULK)
         return s_unpack('!I', self._socket.read(4))[0]
+
+    def remove(self, key, db=0, async=False):
+        return self._remove((key,), db, async)
+
+    def mremove(self, keys, db=0, async=False):
+        return self._remove(keys, db, async)
