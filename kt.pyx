@@ -407,4 +407,4 @@ cdef class Database(object):
         return self.kt.remove(key, self.db, async)
 
     def mremove(self, keys, async=False):
-        return self.kt.remove(keys, self.db, async)
+        return self.kt.mremove(keys, self.db, async)
