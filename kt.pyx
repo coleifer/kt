@@ -6,6 +6,7 @@ from cpython.version cimport PY_MAJOR_VERSION
 
 import io
 import msgpack
+import pickle
 import socket
 import struct
 import time
@@ -64,13 +65,16 @@ cdef class KyotoTycoon(object):
         readonly int port
         readonly timeout
         readonly bint _raw
+        readonly bint _pickle_values
         _socket
 
-    def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False):
+    def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False,
+                 pickle_values=False):
         self.host = encode(host)
         self.port = port
         self.timeout = timeout
         self._raw = raw
+        self._pickle_values = pickle_values
         self._socket = None
 
     def __del__(self):
@@ -123,6 +127,8 @@ cdef class KyotoTycoon(object):
             bkey = encode(key)
             if self._raw:
                 bvalue = encode(data[key])
+            elif self._pickle_values:
+                bvalue = pickle.dumps(data[key], pickle.HIGHEST_PROTOCOL)
             else:
                 bvalue = msgpack.packb(data[key])
             buf.write(s_pack('!HIIq', db, len(bkey), len(bvalue), expire_time))
@@ -166,6 +172,8 @@ cdef class KyotoTycoon(object):
             bvalue = read(nval)
             if self._raw:
                 result[bkey] = bvalue
+            elif self._pickle_values:
+                result[decode(bkey)] = pickle.loads(bvalue)
             else:
                 result[decode(bkey)] = msgpack.unpackb(bvalue)
 
