@@ -55,6 +55,9 @@ cdef inline unicode decode(obj):
 class KyotoTycoonError(Exception): pass
 
 
+cdef class Database(object)  # Forward declaration.
+
+
 cdef class KyotoTycoon(object):
     cdef:
         readonly bytes host
@@ -169,10 +172,24 @@ cdef class KyotoTycoon(object):
         return result
 
     def get(self, key, db=0):
+        """
+        Get the value associated with a single key.
+
+        :param bytes key: key to look-up
+        :param int db: database index
+        :return: value associated with key or ``None`` if missing.
+        """
         response = self._get((key,), db)
         return response.get(key)
 
     def mget(self, keys, db=0):
+        """
+        Get one or more key/value pairs from the given database.
+
+        :param list keys: keys to look-up
+        :param int db: database index
+        :return: dictionary containing key/value pairs that were found in db.
+        """
         return self._get(keys, db)
 
     def __getitem__(self, key):
@@ -202,6 +219,16 @@ cdef class KyotoTycoon(object):
         return s_unpack('!I', self._socket.read(4))[0]
 
     def set(self, key, value, db=0, async=False, expire_time=None):
+        """
+        Set the value for the given key.
+
+        :param bytes key: key to set
+        :param value: value to store
+        :param int db: database index
+        :param bool async: return immediately without db confirmation.
+        :param int expire_time: expire time (in number of seconds)
+        :return: 1 if set successfully and async=False.
+        """
         return self._set({key: value}, db, async, expire_time)
 
     def __setitem__(self, key, value):
@@ -222,6 +249,16 @@ cdef class KyotoTycoon(object):
         self._set({key: value}, db, False, expire)
 
     def mset(self, __data=None, **kwargs):
+        """
+        Set multiple key/value pairs in one operation.
+
+        :param dict __data: a dictionary of key/value pairs
+        :param kwargs: key/value pairs as keyword arguments
+        :param int db: database index
+        :param bool async: return immediately without db confirmation.
+        :param int expire_time: expire time (in number of seconds)
+        :return: number of keys set if async=False.
+        """
         db = kwargs.pop('db', 0)
         async = kwargs.pop('async', False)
         expire_time = kwargs.pop('expire_time', None)
@@ -248,9 +285,25 @@ cdef class KyotoTycoon(object):
         return s_unpack('!I', self._socket.read(4))[0]
 
     def remove(self, key, db=0, async=False):
+        """
+        Remove the given key from the database.
+
+        :param bytes key: key to remove.
+        :param int db: database index.
+        :param bool async: return immediately without db confirmation.
+        :return: 1 if key was removed and async=False.
+        """
         return self._remove((key,), db, async)
 
     def mremove(self, keys, db=0, async=False):
+        """
+        Remove multiple keys from the database in one operation.
+
+        :param list keys: keys to remove.
+        :param int db: database index.
+        :param bool async: return immediately without db confirmation.
+        :return: Number of keys removed if async=False.
+        """
         return self._remove(keys, db, async)
 
     def __delitem__(self, key):
@@ -263,6 +316,13 @@ cdef class KyotoTycoon(object):
         self.remove(key, db)
 
     def run_script(self, name, data=None):
+        """
+        Execute a lua script.
+
+        :param bytes name: name of the lua script.
+        :param dict data: arbitrary key/value data to send to script.
+        :return: A dictionary of key/value pairs returned by script.
+        """
         cdef:
             bytes bkey, bvalue
             bytes bname = encode(name)
@@ -296,3 +356,55 @@ cdef class KyotoTycoon(object):
             else:
                 result[decode(bkey)] = bvalue
         return result
+
+    def database(self, db):
+        """
+        Context-manager for operating on a particular database.
+
+        :param int db: Database index.
+        :return: a :py:class:`Database` object that acts as a context manager.
+        """
+        return Database(self, db)
+
+
+cdef class Database(object):
+    cdef:
+        readonly KyotoTycoon kt
+        public int db
+
+    def __init__(self, kt, db=0):
+        self.kt = kt
+        self.db = db
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return
+
+    def __getitem__(self, key):
+        return self.kt[key, self.db]
+
+    def get(self, key):
+        return self.kt.get(key, self.db)
+
+    def mget(self, keys):
+        return self.kt.mget(keys, self.db)
+
+    def __setitem__(self, key, value):
+        self.kt[key, self.db] = value
+
+    def set(self, key, value, async=False, expire_time=None):
+        return self.kt.set(key, value, self.db, async, expire_time)
+
+    def mset(self, __data=None, **kwargs):
+        return self.kt.mset(__data, db=self.db, **kwargs)
+
+    def __delitem__(self, key):
+        self.kt.remove(key, self.db)
+
+    def remove(self, key, async=False):
+        return self.kt.remove(key, self.db, async)
+
+    def mremove(self, keys, async=False):
+        return self.kt.remove(keys, self.db, async)
