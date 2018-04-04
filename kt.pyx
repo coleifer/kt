@@ -81,6 +81,12 @@ cdef class KyotoTycoon(object):
         if self._socket is not None:
             self._socket.close()
 
+    def __enter__(self):
+        self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def open(self):
         if self._socket is not None:
             return False
