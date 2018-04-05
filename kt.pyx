@@ -66,15 +66,17 @@ cdef class KyotoTycoon(object):
         readonly timeout
         readonly bint _raw
         readonly bint _pickle_values
+        readonly bint _decode_keys
         _socket
 
     def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False,
-                 pickle_values=False):
+                 pickle_values=False, decode_keys=True):
         self.host = encode(host)
         self.port = port
         self.timeout = timeout
         self._raw = raw
         self._pickle_values = pickle_values
+        self._decode_keys = decode_keys
         self._socket = None
 
     def __del__(self):
@@ -176,12 +178,13 @@ cdef class KyotoTycoon(object):
             _, nkey, nval, _ = s_unpack('!HIIq', read(18))
             bkey = read(nkey)
             bvalue = read(nval)
+            key = decode(bkey) if self._decode_keys else bkey
             if self._raw:
-                result[bkey] = bvalue
+                result[key] = bvalue
             elif self._pickle_values:
-                result[decode(bkey)] = pickle.loads(bvalue)
+                result[key] = pickle.loads(bvalue)
             else:
-                result[decode(bkey)] = msgpack.unpackb(bvalue)
+                result[key] = msgpack.unpackb(bvalue)
 
         return result
 
