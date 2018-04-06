@@ -14,6 +14,9 @@ import time
 s_pack = struct.pack
 s_unpack = struct.unpack
 
+p_dumps = pickle.dumps
+p_loads = pickle.loads
+
 
 DEF KT_SET_BULK = 0xb8
 DEF KT_GET_BULK = 0xba
@@ -136,7 +139,7 @@ cdef class KyotoTycoon(object):
             if self._raw:
                 bvalue = encode(data[key])
             elif self._pickle_values:
-                bvalue = pickle.dumps(data[key], pickle.HIGHEST_PROTOCOL)
+                bvalue = p_dumps(data[key], pickle.HIGHEST_PROTOCOL)
             else:
                 bvalue = msgpack.packb(data[key])
             buf.write(s_pack('!HIIq', db, len(bkey), len(bvalue), expire_time))
@@ -182,7 +185,7 @@ cdef class KyotoTycoon(object):
             if self._raw:
                 result[key] = bvalue
             elif self._pickle_values:
-                result[key] = pickle.loads(bvalue)
+                result[key] = p_loads(bvalue)
             else:
                 result[key] = msgpack.unpackb(bvalue)
 
@@ -196,9 +199,10 @@ cdef class KyotoTycoon(object):
         :param int db: database index
         :return: value associated with key or ``None`` if missing.
         """
-        cdef bytes bkey = encode(key)
+        cdef:
+            bytes bkey = encode(key)
         response = self._get((bkey,), db)
-        return response.get(key if self._decode_keys else bkey)
+        return response.get(decode(bkey) if self._decode_keys else bkey)
 
     def mget(self, keys, db=0):
         """
