@@ -196,8 +196,9 @@ cdef class KyotoTycoon(object):
         :param int db: database index
         :return: value associated with key or ``None`` if missing.
         """
-        response = self._get((key,), db)
-        return response.get(key)
+        cdef bytes bkey = encode(key)
+        response = self._get((bkey,), db)
+        return response.get(key if self._decode_keys else bkey)
 
     def mget(self, keys, db=0):
         """
