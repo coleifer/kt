@@ -73,7 +73,7 @@ cdef class KyotoTycoon(object):
         _socket
 
     def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False,
-                 pickle_values=False, decode_keys=True):
+                 pickle_values=False, decode_keys=True, auto_connect=True):
         self.host = encode(host)
         self.port = port
         self.timeout = timeout
@@ -81,6 +81,8 @@ cdef class KyotoTycoon(object):
         self._pickle_values = pickle_values
         self._decode_keys = decode_keys
         self._socket = None
+        if auto_connect:
+            self.open()
 
     def __del__(self):
         if self._socket is not None:
@@ -288,6 +290,8 @@ cdef class KyotoTycoon(object):
             kwargs.update(__data)
         return self._set(kwargs, db, async, expire_time)
 
+    update = mset  # Alias mset -> update for dict compatibility.
+
     cdef _remove(self, keys, int db, bint async):
         cdef:
             bytes request
@@ -421,6 +425,7 @@ cdef class Database(object):
 
     def mset(self, __data=None, **kwargs):
         return self.kt.mset(__data, db=self.db, **kwargs)
+    update = mset  # Alias mset -> update for dict compatibility.
 
     def __delitem__(self, key):
         self.kt.remove(key, self.db)
