@@ -67,7 +67,7 @@ class HTTPKyotoTycoon(object):
 
     def __init__(self, host='127.0.0.1', port=1978, default_db=0,
                  decode_keys=True, pickle_values=False, msgpack_values=False,
-                 json_values=False):
+                 json_values=False, auto_connect=True):
         self._host = host
         self._port = port
         self._default_db = default_db
@@ -92,12 +92,14 @@ class HTTPKyotoTycoon(object):
 
         self._prefix = 'http://%s:%s/rpc' % (self._host, self._port)
         self._session = None
+        if auto_connect:
+            self.open()
 
-    def _encode_dict(self, data):
+    def _encode_keys_values(self, data):
         accum = []
         for key, value in data.items():
             bkey = encode(key)
-            bvalue = self._encode_value(value)
+            bvalue = encode(value)
             accum.append(b'%s\t%s' % (b64encode(bkey), b64encode(bvalue)))
 
         return b'\n'.join(accum)
@@ -105,8 +107,7 @@ class HTTPKyotoTycoon(object):
     def _encode_keys(self, keys):
         accum = []
         for key in keys:
-            bkey = b'_' + encode(key)
-            accum.append(b'%s\t' % b64encode(bkey))
+            accum.append(b'%s\t' % b64encode(b'_' + encode(key)))
         return b'\n'.join(accum)
 
     def _decode_response(self, tsv, content_type):
@@ -123,7 +124,7 @@ class HTTPKyotoTycoon(object):
 
             if self._decode_keys:
                 key = decode(key)
-            accum[key] = self._decode_value(value)
+            accum[key] = value
 
         return accum
 
@@ -145,68 +146,143 @@ class HTTPKyotoTycoon(object):
         self._session = None
         return True
 
-    def _post(self, path, data, db=None):
-        if db is None: db = self._default_db
+    def _post(self, path, body, db):
+        if db is None:
+            db = self._default_db
+        if db is not False:
+            path += '?DB=%s' % db
+        return self._session.post(self.path(path), data=body)
+
+    def request(self, path, data, db=None, allowed_status=None):
         if isinstance(data, dict):
-            body = self._encode_dict(data)
+            body = self._encode_keys_values(data)
+        elif isinstance(data, list):
+            body = self._encode_keys(data)
         else:
             body = data
-        r = self._session.post(self.path(path + '?DB=%s' % db), data=body)
+
+        r = self._post(path, body, db)
+        if r.status_code != 200:
+            if allowed_status is None or r.status_code not in allowed_status:
+                raise KyotoTycoonError('protocol error [%s]' % r.status_code)
+
         return (self._decode_response(r.content, r.headers['content-type']),
                 r.status_code)
 
-    def _check_error(self, status_code):
-        if status_code != 200:
-            raise KyotoTycoonError('protocol error [%s]' % status_code)
-
-    def get(self, key):
-        resp, status = self._post('/get', {'key': key})
-        if status == 404:
-            return
-
-        self._check_error(status)
-        value = b'value' if not self._decode_keys else 'value'
-        return resp[value]
-
-    def set(self, key, value):
-        resp, status = self._post('/set', {'key': key, 'value': value})
-        self._check_error(status)
+    def status(self, db=None):
+        resp, status = self.request('/status', {}, db)
         return resp
 
-    def check(self, key):
-        resp, status = self._post('/check', {'key': key})
-        if status == 450:  # Record not found.
-            return False
-        self._check_error(status)
+    def report(self):
+        resp, status = self.request('/report', {}, None)
+        return resp
+
+    def clear(self, db=None):
+        resp, status = self.request('/clear', {}, db)
         return True
 
-    def set_bulk(self, __data=None, **params):
+    def play_script(self, name, __data=None, **params):
         if __data is not None:
             params.update(__data)
+
         accum = {}
-        for key in params:
-            accum['_%s' % key] = params[key]
-        resp, status = self._post('/set_bulk', accum)
-        self._check_error(status)
+        for key, value in params.items():
+            accum['_%s' % key] = self._encode_value(value)
+
+        resp, status = self.request('/play_script', accum, False, (450,))
+        if status == 450:
+            return
+
+        accum = {}
+        for key, value in resp.items():
+            accum[key[1:]] = self._decode_value(value)
+        return accum
+
+    def get(self, key, db=None):
+        resp, status = self.request('/get', {'key': key}, db, (450,))
+        if status == 450:
+            return
+        value = resp['value' if self._decode_keys else b'value']
+        return self._decode_value(value)
+
+    def _simple_write(self, cmd, key, value, db=None, expire_time=None):
+        data = {'key': key, 'value': self._encode_value(value)}
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+        resp, status = self.request('/%s' % cmd, data, db, (450,))
+        return status != 450
+
+    def set(self, key, value, db=None, expire_time=None):
+        return self._simple_write('set', key, value, db, expire_time)
+
+    def add(self, key, value, db=None, expire_time=None):
+        return self._simple_write('add', key, value, db, expire_time)
+
+    def replace(self, key, value, db=None, expire_time=None):
+        return self._simple_write('replace', key, value, db, expire_time)
+
+    def append(self, key, value, db=None, expire_time=None):
+        return self._simple_write('append', key, value, db, expire_time)
+
+    def remove(self, key, db=None):
+        resp, status = self.request('/remove', {'key': key}, db, (450,))
+        return status != 450
+
+    def check(self, key, db=None):
+        resp, status = self.request('/check', {'key': key}, db, (450,))
+        return status != 450
+
+    def set_bulk(self, __data=None, **params):
+        db = params.pop('db', None)
+        expire_time = params.pop('expire_time', None)
+        if __data is not None:
+            params.update(__data)
+
+        accum = {}
+        if expire_time is not None:
+            accum['xt'] = str(expire_time)
+
+        # Keys must be prefixed by "_".
+        for key, value in params.items():
+            accum['_%s' % key] = self._encode_value(value)
+
+        resp, status = self.request('/set_bulk', accum, db)
         return resp
 
-    def get_bulk(self, keys):
-        data = self._encode_keys(keys)
-        resp, status = self._post('/get_bulk', data)
-        self._check_error(status)
+    def get_bulk(self, keys, db=None):
+        resp, status = self.request('/get_bulk', keys, db)
 
-        num = 'num' if self._decode_keys else b'num'
-        n = resp.pop(num)
-        if n == '0':
+        n = resp.pop('num' if self._decode_keys else b'num', b'0')
+        if n == b'0':
             return {}
 
         accum = {}
         for key, value in resp.items():
-            accum[key[1:]] = value
+            accum[key[1:]] = self._decode_value(value)
         return accum
 
-    def remove_bulk(self, keys):
-        data = self._encode_keys(keys)
-        resp, status = self._post('/remove_bulk', data)
-        self._check_error(status)
-        return resp
+    def remove_bulk(self, keys, db=None):
+        resp, status = self.request('/remove_bulk', keys, db)
+        return int(resp.pop('num' if self._decode_keys else b'num'))
+
+    def seize(self, key, db=None):
+        resp, status = self.request('/seize', {'key': key}, db, (450,))
+        if status == 450:
+            return
+        value = resp['value' if self._decode_keys else b'value']
+        return self._decode_value(value)
+
+    def cas(self, key, old_val, new_val, db=None, expire_time=None):
+        if old_val is None and new_val is None:
+            raise ValueError('old value and/or new value must be specified.')
+
+        data = {'key': key}
+        if old_val is not None:
+            data['oval'] = self._encode_value(old_val)
+        if new_val is not None:
+            data['nval'] = self._encode_value(new_val)
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+
+        resp, status = self.request('/cas', data, db, (450,))
+        return status != 450
