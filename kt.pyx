@@ -5,11 +5,18 @@ from cpython.unicode cimport PyUnicode_Check
 from cpython.version cimport PY_MAJOR_VERSION
 
 import io
-import msgpack
 import pickle
 import socket
 import struct
 import time
+
+try:
+    import msgpack
+    m_pack = msgpack.packb
+    m_unpack = msgpack.unpackb
+except ImportError:
+    msgpack = None
+    m_pack = m_unpack = None
 
 s_pack = struct.pack
 s_unpack = struct.unpack
@@ -57,6 +64,7 @@ cdef inline unicode decode(obj):
 
 
 class KyotoTycoonError(Exception): pass
+class ConfigurationError(KyotoTycoonError): pass
 
 
 cdef class Database(object)  # Forward declaration.
@@ -67,19 +75,22 @@ cdef class KyotoTycoon(object):
         readonly bytes host
         readonly int port
         readonly timeout
-        readonly bint _raw
-        readonly bint _pickle_values
         readonly bint _decode_keys
+        readonly bint _msgpack_values
+        readonly bint _pickle_values
         _socket
 
-    def __init__(self, host='127.0.0.1', port=1978, timeout=None, raw=False,
-                 pickle_values=False, decode_keys=True, auto_connect=True):
+    def __init__(self, host='127.0.0.1', port=1978, timeout=None,
+                 pickle_values=False, msgpack_values=False, decode_keys=True,
+                 auto_connect=True):
         self.host = encode(host)
         self.port = port
         self.timeout = timeout
-        self._raw = raw
-        self._pickle_values = pickle_values
         self._decode_keys = decode_keys
+        self._msgpack_values = msgpack_values
+        if msgpack_values and msgpack is None:
+            raise ConfigurationError('msgpack library not installed')
+        self._pickle_values = pickle_values
         self._socket = None
         if auto_connect:
             self.open()
@@ -142,12 +153,12 @@ cdef class KyotoTycoon(object):
         buf.write(s_pack('!BII', action, flags, len(data)))
         for key in data:
             bkey = encode(key)
-            if self._raw:
-                bvalue = encode(data[key])
-            elif self._pickle_values:
+            if self._pickle_values:
                 bvalue = p_dumps(data[key], pickle.HIGHEST_PROTOCOL)
+            elif self._msgpack_values:
+                bvalue = m_pack(data[key])
             else:
-                bvalue = msgpack.packb(data[key])
+                bvalue = encode(data[key])
             buf.write(s_pack('!HIIq', db, len(bkey), len(bvalue), expire_time))
             buf.write(bkey)
             buf.write(bvalue)
@@ -196,12 +207,12 @@ cdef class KyotoTycoon(object):
             bkey = read(nkey)
             bvalue = read(nval)
             key = decode(bkey) if self._decode_keys else bkey
-            if self._raw:
-                result[key] = bvalue
-            elif self._pickle_values:
+            if self._pickle_values:
                 result[key] = p_loads(bvalue)
+            elif self._msgpack_values:
+                result[key] = m_unpack(bvalue)
             else:
-                result[key] = msgpack.unpackb(bvalue)
+                result[key] = bvalue
 
         return result
 
@@ -389,10 +400,10 @@ cdef class KyotoTycoon(object):
             klen, vlen = s_unpack('!II', read(8))
             bkey = read(klen)
             bvalue = read(vlen)
-            if self._raw:
-                result[bkey] = bvalue
-            else:
+            if self._decode_keys:
                 result[decode(bkey)] = bvalue
+            else:
+                result[bkey] = bvalue
         return result
 
     def database(self, db):
