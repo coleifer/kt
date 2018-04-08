@@ -109,7 +109,11 @@ cdef class KyotoTycoon(object):
         if self._socket is None:
             return False
 
-        self._socket.close()
+        try:
+            self._socket.close()
+        except OSError:
+            pass
+
         self._socket = None
         return True
 
@@ -151,8 +155,16 @@ cdef class KyotoTycoon(object):
         return <bytes>buf.getvalue()
 
     cdef int _check_response(self, action) except -1:
-        cdef int magic
-        magic, = s_unpack('!B', self._socket.read(1))
+        cdef:
+            bytes bmagic
+            int magic
+
+        bmagic = self._socket.read(1)
+        if not bmagic:
+            self.close()
+            raise KyotoTycoonError('Server went away')
+
+        magic, = s_unpack('!B', bmagic)
         if magic == action:
             return 0
         elif magic == KT_ERROR:
