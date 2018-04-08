@@ -75,10 +75,6 @@ class EmbeddedServer(object):
         self._server_p.wait()
         self._server_p = self._client = None
 
-    def __del__(self):
-        if self._server_p:
-            self._server_p.terminate()
-
     def run(self):
         """
         Run ktserver on a random high port and return a client connected to it.
@@ -98,6 +94,7 @@ class EmbeddedServer(object):
         t.start()
 
         self._server_started.wait()  # Wait for server to start up.
+        atexit.register(self._stop_server)
 
         attempts = 0
         while attempts < 20:
@@ -117,6 +114,7 @@ class EmbeddedServer(object):
             logger.warning('server already stopped')
             return False
 
+        atexit.unregister(self._stop_server)
         self._stop_server()
 
     def _find_open_port(self):
