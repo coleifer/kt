@@ -485,7 +485,7 @@ cdef class TokyoTyrantProtocol(object):
         return n
 
     def rnum(self):
-        return self._long_cmd('\xc8\x80')
+        return self._long_cmd(b'\xc8\x80')
 
     def size(self):
-        return self._long_cmd('\xc8\x88')
+        return self._long_cmd(b'\xc8\x88')
