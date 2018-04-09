@@ -7,7 +7,8 @@ import sys
 import threading
 import time
 
-from kt.client import KyotoTycoon
+from .client import KyotoTycoon
+from .exceptions import KyotoTycoonError
 
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class EmbeddedServer(object):
     @property
     def client(self):
         if self._server_terminated.is_set():
-            raise Exception('server not running')
+            raise KyotoTycoonError('server not running')
         elif self._client is None:
             self._client = KyotoTycoon(self._host, self._port)
         return self._client
@@ -106,8 +107,8 @@ class EmbeddedServer(object):
                 time.sleep(0.1)
 
         self._stop_server()
-        raise Exception('Unable to connect to server on %s:%s' %
-                        (self._host, self._port))
+        raise KyotoTycoonError('Unable to connect to server on %s:%s' %
+                               (self._host, self._port))
 
     def stop(self):
         if self._server_terminated.is_set():
@@ -132,4 +133,4 @@ class EmbeddedServer(object):
             except OSError:
                 pass
 
-        raise Exception('Could not find open port')
+        raise KyotoTycoonError('Could not find open port')
