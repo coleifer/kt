@@ -8,6 +8,7 @@ import threading
 import time
 
 from .client import KyotoTycoon
+from .client import TokyoTyrant
 from .exceptions import KyotoTycoonError
 
 
@@ -146,3 +147,13 @@ class EmbeddedServer(object):
                 pass
 
         raise KyotoTycoonError('Could not find open port')
+
+
+class EmbeddedTokyoTyrantServer(object):
+    def __init__(self, server='ttserver', host='127.0.0.1', port=None,
+                 database='*', server_args=None):
+        super(EmbeddedTokyoTyrantServer, self).__init__(server, host, port,
+                                                        database, server_args)
+
+    def _create_client(self):
+        return TokyoTyrant(self._host, self._port)

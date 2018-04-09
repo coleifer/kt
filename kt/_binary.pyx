@@ -252,3 +252,238 @@ cdef class BinaryProtocol(object):
             bvalue = read(vlen)
             result[_decode(bkey) if decode_keys else bkey] = bvalue
         return result
+
+
+cdef class TokyoTyrantProtocol(object):
+    cdef:
+        readonly str _host
+        readonly int _port
+        readonly bint _decode_keys
+        readonly _encode_value
+        readonly _decode_value
+        readonly _timeout
+        _socket
+
+    def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
+                 encode_value=None, decode_value=None, timeout=None):
+        self._host = host
+        self._port = port
+        self._decode_keys = decode_keys
+        self._encode_value = encode_value or encode
+        self._decode_value = decode_value or decode
+        self._timeout = timeout
+        self._socket = None
+
+    def __del__(self):
+        if self._socket is not None:
+            self._socket.close()
+
+    def open(self):
+        if self._socket is not None:
+            return False
+
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((self._host, self._port))
+        if self._timeout:
+            conn.settimeout(self._timeout)
+        self._socket = conn.makefile('rwb')
+        return True
+
+    def close(self):
+        if self._socket is None:
+            return False
+
+        try:
+            self._socket.close()
+        except OSError:
+            pass
+
+        self._socket = None
+        return True
+
+    cdef bytes _make_request_key(self, key, magic):
+        cdef:
+            bytes bkey
+
+        buf = io.BytesIO()
+        buf.write(magic)
+
+        bkey = _encode(key)
+        buf.write(s_pack('!I', len(bkey)))
+        buf.write(bkey)
+        return <bytes>buf.getvalue()
+
+    cdef bytes _make_request_key_value(self, key, value, magic):
+        cdef:
+            bytes bkey, bvalue
+
+        buf = io.BytesIO()
+        buf.write(magic)
+
+        bkey = _encode(key)
+        bvalue = self._encode_value(value)
+        buf.write(s_pack('!II', len(bkey), len(bvalue)))
+        buf.write(bkey)
+        buf.write(bvalue)
+        return <bytes>buf.getvalue()
+
+    cdef bytes _make_request_keys(self, keys, magic):
+        cdef:
+            bytes bkey
+
+        buf = io.BytesIO()
+        buf.write(magic)
+        buf.write(s_pack('!I', len(keys)))
+        for key in keys:
+            bkey = _encode(key)
+            buf.write(s_pack('!I', len(bkey)))
+            buf.write(bkey)
+
+        return <bytes>buf.getvalue()
+
+    cdef int _check_response(self) except -1:
+        cdef:
+            bytes bmagic
+            int magic
+
+        bmagic = self._socket.read(1)
+        if not bmagic:
+            self.close()
+            raise ServerError('Server went away')
+
+        magic, = s_unpack('!B', bmagic)
+        if magic == 0:
+            return True
+        else:
+            raise ServerError('server error: %x' % magic)
+
+    cdef _key_value_cmd(self, key, value, bytes bmagic):
+        cdef bytes request
+        request = self._make_request_key_value(key, value, bmagic)
+        self._socket.write(request)
+        self._socket.flush()
+        return self._check_response()
+
+    def put(self, key, value):
+        return self._key_value_cmd(key, value, b'\xc8\x10')
+
+    def putkeep(self, key, value):
+        return self._key_value_cmd(key, value, b'\xc8\x11')
+
+    def putcat(self, key, value):
+        return self._key_value_cmd(key, value, b'\xc8\x12')
+
+    def out(self, key):
+        cdef bytes request
+        request = self._make_request_key(key, b'\xc8\x20')
+        self._socket.write(request)
+        self._socket.flush()
+        return self._check_response()
+
+    def get(self, key):
+        cdef:
+            bytes request, bval
+            int nval
+
+        request = self._make_request_key(key, b'\xc8\x30')
+        self._socket.write(request)
+        self._socket.flush()
+        if self._check_response():
+            vsiz, = s_unpack('!I', self._socket.read(4))
+            bval = self._socket.read(vsiz)
+            return self._decode_value(bval)
+
+    def mget(self, keys):
+        cdef:
+            bytes request, bkey, bval
+            int nitems, nkey, nval
+
+        request = self._make_request_keys(keys, b'\xc8\x31')
+        self._socket.write(request)
+        self._socket.flush()
+        if not self._check_response():
+            return
+
+        nitems, = s_unpack('!I', self._socket.read(4))
+        accum = {}
+
+        read = self._socket.read
+        for _ in range(nitems):
+            nkey, nval = s_unpack('!II', read(8))
+            bkey = read(nkey)
+            bvalue = read(nval)
+            key = _decode(bkey) if self._decode_keys else bkey
+            accum[key] = self._decode_value(bvalue)
+
+        return accum
+
+    def vsiz(self, key):
+        cdef:
+            bytes request
+            int nval
+
+        request = self._make_request_key(key, b'\xc8\x38')
+        self._socket.write(request)
+        self._socket.flush()
+        if not self._check_response():
+            return None
+
+        nval, = s_unpack('!I', self._socket.read(4))
+        return nval
+
+    def addint(self, key, value):
+        cdef:
+            bytes bkey = _encode(key)
+            int nval
+
+        buf = io.BytesIO()
+        buf.write(b'\xc8\x60')
+        buf.write(s_pack('!II', len(bkey), value))
+        buf.write(bkey)
+        self._socket.write(buf.getvalue())
+        self._socket.flush()
+
+        if self._check_response():
+            nval, = s_unpack('!I', self._socket.read(4))
+            return nval
+
+    def ext(self, name, int options, key, value):
+        cdef:
+            bytes bname = _encode(name)
+            bytes bkey = _encode(key)
+            bytes bval = self._encode_value(value)
+
+        buf = io.BytesIO()
+        buf.write(b'\xc8\x70')
+        buf.write(s_pack('!IIII', len(bname), options, len(bkey), len(bval)))
+        buf.write(bname)
+        buf.write(bkey)
+        buf.write(bval)
+        self._socket.write(buf.getvalue())
+        self._socket.flush()
+
+        if not self._check_response():
+            return
+
+        cdef int resplen
+        resplen, = s_unpack('!I', self._socket.read(4))
+        return self._socket.read(resplen)
+
+    def vanish(self):
+        self._socket.write(b'\xc8\x72')
+        self._socket.flush()
+        return self._check_response()
+
+    def _long_cmd(self, bytes bmagic):
+        cdef long n
+        self._socket.write(bmagic)
+        self._socket.flush()
+        self._check_response()
+        n, = s_unpack('!q', self._socket.read(8))
+        return n
+
+    def rnum(self):
+        return self._long_cmd('\xc8\x80')
+
+    def size(self):
+        return self._long_cmd('\xc8\x88')

@@ -13,6 +13,7 @@ except ImportError:
     msgpack = None
 
 from ._binary import BinaryProtocol
+from ._binary import TokyoTyrantProtocol
 from ._binary import decode
 from ._binary import encode
 from .exceptions import ImproperlyConfigured
@@ -202,3 +203,102 @@ class KyotoTycoon(object):
     def set_database(self, db):
         self._default_db = db
         return self
+
+
+class TokyoTyrant(object):
+    def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
+                 decode_keys=True, auto_connect=True, timeout=None):
+        self._host = host
+        self._port = port
+        self._default_db = default_db
+        self._serializer = serializer
+        self._decode_keys = decode_keys
+        self._auto_connect = auto_connect
+        self._timeout = timeout
+
+        if self._serializer == KT_MSGPACK and msgpack is None:
+            raise ImproperlyConfigured('msgpack library not found')
+        elif self._serializer == KT_BINARY:
+            encode_value = encode
+            decode_value = decode
+        elif self._serializer == KT_JSON:
+            encode_value = lambda v: (json
+                                      .dumps(v, separators=(',', ':'))
+                                      .encode('utf-8'))
+            decode_value = lambda v: json.loads(v.decode('utf-8'))
+        elif self._serializer == KT_MSGPACK:
+            encode_value = msgpack.packb
+            decode_value = msgpack.unpackb
+        elif self._serializer == KT_PICKLE:
+            encode_value = partial(pickle.dumps,
+                                   protocol=pickle.HIGHEST_PROTOCOL)
+            decode_value = pickle.loads
+        else:
+            raise ImproperlyConfigured('unrecognized serializer "%s" - use one'
+                                       ' of: %s' % (self._serializer,
+                                                    ','.join(KT_SERIALIZERS)))
+
+        # Session and socket used for rpc and binary protocols, respectively.
+        self._connected = False
+
+        # Protocol handlers.
+        self._protocol = TokyoTyrantProtocol(
+            host=self._host,
+            port=self._port,
+            decode_keys=self._decode_keys,
+            encode_value=encode_value,
+            decode_value=decode_value,
+            timeout=self._timeout)
+
+        if self._auto_connect:
+            self.open()
+
+    def open(self):
+        if self._connected:
+            return False
+
+        self._protocol.open()
+        self._connected = True
+        return True
+
+    def close(self):
+        if not self._connected:
+            return False
+
+        self._protocol.close()
+        self._connected = False
+        return True
+
+    def get(self, key):
+        return self._protocol.get(key)
+    __getitem__ = get
+
+    def set(self, key, value):
+        return self._protocol.put(key, value)
+    __setitem__ = set
+
+    def add(self, key, value):
+        return self._protocol.putkeep(key, value)
+
+    def append(self, key, value):
+        return self._protocol.putcat(key, value)
+
+    def remove(self, key):
+        return self._protocol.out(key)
+    __delitem__ = remove
+
+    def get_bulk(self, keys):
+        return self._protocol.mget(keys)
+
+    def check(self, key):
+        return self._protocol.vsiz(key)
+
+    def clear(self):
+        return self._protocol.vanish()
+
+    def __len__(self):
+        return self._protocol.rnum()
+
+    @property
+    def size(self):
+        return self._protocol.size()
