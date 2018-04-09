@@ -298,6 +298,9 @@ class TokyoTyrant(object):
     def clear(self):
         return self._protocol.vanish()
 
+    def __contains__(self, key):
+        return True if self.check(key) else False
+
     def __len__(self):
         return self._protocol.rnum()
 
