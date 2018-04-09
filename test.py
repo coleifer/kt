@@ -1,4 +1,4 @@
-from kt import KyotoTycoon
+from kt import EmbeddedServer, KyotoTycoon
 
 
 kt = KyotoTycoon()
@@ -40,3 +40,14 @@ assert len(kt) == 1
 
 assert kt.clear()
 assert len(kt) == 0
+
+assert kt.close()
+
+e = EmbeddedServer()
+e.run()
+kt = e.client
+
+assert kt.get('foo') is None
+assert kt.set('foo', 'bar') == 1
+assert kt.get('foo') == 'bar'
+e.stop()
