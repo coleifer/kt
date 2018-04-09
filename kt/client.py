@@ -210,7 +210,6 @@ class TokyoTyrant(object):
                  decode_keys=True, auto_connect=True, timeout=None):
         self._host = host
         self._port = port
-        self._default_db = default_db
         self._serializer = serializer
         self._decode_keys = decode_keys
         self._auto_connect = auto_connect
@@ -286,6 +285,9 @@ class TokyoTyrant(object):
     def remove(self, key):
         return self._protocol.out(key)
     __delitem__ = remove
+
+    def incr(self, key, n=1):
+        return self._protocol.addint(key, n)
 
     def get_bulk(self, keys):
         return self._protocol.mget(keys)

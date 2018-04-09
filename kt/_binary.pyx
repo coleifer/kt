@@ -354,6 +354,8 @@ cdef class TokyoTyrantProtocol(object):
         magic, = s_unpack('!B', bmagic)
         if magic == 0:
             return True
+        elif magic == 1:
+            return False
         else:
             raise ServerError('server error: %x' % magic)
 
