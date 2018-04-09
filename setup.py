@@ -1,4 +1,5 @@
 import os
+import warnings
 
 from distutils.core import setup, Extension
 try:
@@ -9,6 +10,12 @@ except ImportError:
     warnings.warn('Cython not installed, using pre-generated C source file.')
 else:
     cython_installed = True
+
+try:
+    from kt import __version__
+except ImportError:
+    warnings.warn('could not import kt module to determine version')
+    __version__ = '0.0.0'
 
 
 if cython_installed:
@@ -25,7 +32,7 @@ kt = Extension(
 
 setup(
     name='kt',
-    version='0.1.0',
+    version=__version__,
     description='Fast Python bindings for KyotoTycoon.',
     author='Charles Leifer',
     author_email='',

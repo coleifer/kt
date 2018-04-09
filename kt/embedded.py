@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from kt import KyotoTycoon
+from kt.client import KyotoTycoon
 
 
 logger = logging.getLogger(__name__)
