@@ -32,12 +32,15 @@ class EmbeddedServer(object):
         self._server_p = None
         self._client = None
 
+    def _create_client(self):
+        return KyotoTycoon(self._host, self._port)
+
     @property
     def client(self):
         if self._server_terminated.is_set():
             raise KyotoTycoonError('server not running')
         elif self._client is None:
-            self._client = KyotoTycoon(self._host, self._port)
+            self._client = self._create_client()
         return self._client
 
     @property
@@ -101,7 +104,7 @@ class EmbeddedServer(object):
         while attempts < 20:
             attempts += 1
             try:
-                self._client = KyotoTycoon(host=self._host, port=self._port)
+                self._client = self._create_client()
                 return True
             except socket.error:
                 time.sleep(0.1)
