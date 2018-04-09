@@ -2,7 +2,7 @@ include README.md
 include LICENSE
 include kt/_binary.c
 include kt/_binary.pyx
-include kt/tests.py
+include tests.py
 recursive-include docs *
 
 global-exclude *.pyc
