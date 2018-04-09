@@ -1,3 +1,3 @@
 ### kt
 
-Fast bindings to kyototycoon.
+Fast bindings to kyototycoon (or tokyotyrant).
