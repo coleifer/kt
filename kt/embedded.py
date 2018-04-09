@@ -103,6 +103,8 @@ class EmbeddedServer(object):
             try:
                 self._client = KyotoTycoon(host=self._host, port=self._port)
                 return True
+            except socket.error:
+                time.sleep(0.1)
             except OSError:
                 time.sleep(0.1)
 
@@ -115,7 +117,14 @@ class EmbeddedServer(object):
             logger.warning('server already stopped')
             return False
 
-        atexit.unregister(self._stop_server)
+        if hasattr(atexit, 'unregister'):
+            atexit.unregister(self._stop_server)
+        else:
+            funcs = []
+            for fn, arg, kw in atexit._exithandlers:
+                if fn != self._stop_server:
+                    funcs.append((fn, arg, kw))
+            atexit._exithandlers = funcs
         self._stop_server()
 
     def _find_open_port(self):
