@@ -1,2 +1,2 @@
-kt.c
-kt*.so
+kt/_binary.c
+kt/_binary*.so

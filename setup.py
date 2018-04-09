@@ -12,13 +12,13 @@ else:
 
 
 if cython_installed:
-    python_source = 'kt.pyx'
+    python_source = 'kt/_binary.pyx'
 else:
-    python_source = 'kt.c'
+    python_source = 'kt/_binary.c'
     cythonize = lambda obj: obj
 
 kt = Extension(
-    'kt',
+    'kt._binary',
     #extra_compile_args=['-g', '-O0'],
     #extra_link_args=['-g'],
     sources=[python_source])
@@ -29,5 +29,6 @@ setup(
     description='Fast Python bindings for KyotoTycoon.',
     author='Charles Leifer',
     author_email='',
+    packages=['kt'],
     ext_modules=cythonize([kt]),
 )
