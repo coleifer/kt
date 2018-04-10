@@ -574,4 +574,4 @@ cdef class TokyoTyrantProtocol(object):
         self._socket.flush()
         self._check_response()
         n, = s_unpack('!I', self._socket.read(4))
-        return self._socket.read(n)
+        return _decode(self._socket.read(n))
