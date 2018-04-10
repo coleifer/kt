@@ -4,6 +4,7 @@ from cpython.unicode cimport PyUnicode_Check
 from cpython.version cimport PY_MAJOR_VERSION
 
 import io
+import math
 import socket
 import struct
 import time
@@ -97,6 +98,12 @@ cdef class RequestBuffer(object):
         self.buf.write(s_pack('!q', l))
         return self
 
+    cdef RequestBuffer write_double(self, d):
+        m, i = math.modf(d)
+        m, i = int(m * 1e12), int(i)
+        self.buf.write(s_pack('>QQ', i, m))
+        return self
+
     cdef RequestBuffer write_bytes(self, bytes data, write_length):
         if write_length:
             self.write_int(len(data))
@@ -177,6 +184,12 @@ cdef class BaseResponseHandler(object):
     cdef int read_long(self):
         return s_unpack('!q', self._socket.read(8))[0]
 
+    cdef double read_double(self):
+        cdef:
+            long i, m
+        i, m = s_unpack('>QQ', self._socket.read(16))
+        return i + (m * 1e-12)
+
     cdef bytes read_bytes(self):
         return self._socket.read(self.read_int())
 
@@ -185,6 +198,15 @@ cdef class BaseResponseHandler(object):
 
     cdef read_value(self):
         return self.value_decode(self.read_bytes())
+
+    cdef read_keys(self):
+        cdef:
+            int n = self.read_int()
+            list accum = []
+
+        for i in range(n):
+            accum.append(self.read_key())
+        return accum
 
     cdef tuple read_key_value(self):
         cdef:
@@ -252,7 +274,7 @@ cdef class TTResponseHandler(BaseResponseHandler):
         if not bmagic:
             raise ServerConnectionError('Server went away')
 
-        imagic, = s_unpack('!B', bmagic)
+        imagic = ord(bmagic)
         if imagic == 0 or imagic == 1:
             return imagic
         else:
@@ -430,6 +452,21 @@ cdef class TTBinaryProtocol(BinaryProtocol):
     def putcat(self, key, value):
         return self._key_value_cmd(key, value, b'\xc8\x12') == 0
 
+    def putshl(self, key, value, width):
+        cdef:
+            bytes bkey = _encode(key)
+            bytes bval = self.encode_value(value)
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x13')
+         .write_ints((len(bkey), len(bval), width))
+         .write_bytes(bkey, False)
+         .write_bytes(bval, False)
+         .send())
+
+        return self.response().check_error() == 0
+
     def out(self, key):
         cdef:
             RequestBuffer request = self.request()
@@ -496,6 +533,23 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if not response.check_error():
             return response.read_int()
 
+    def adddouble(self, key, value):
+        cdef:
+            bytes bkey = _encode(key)
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        (request
+         .write_magic(b'\xc8\x61')
+         .write_int(len(bkey))
+         .write_double(value)
+         .write_bytes(bkey, False)
+         .send())
+
+        response = self.response()
+        if not response.check_error():
+            return response.read_double()
+
     def script(self, name, key=None, value=None):
         cdef:
             bytes bname = _encode(name)
@@ -515,6 +569,36 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         response = self.response()
         if response.check_error():
             return response.read_bytes()
+
+    def keys(self):
+        cdef TTResponseHandler response
+
+        self.request().write_magic(b'\xc8\x50').send()
+        if self.response().check_error():
+            return []
+
+        while True:
+            self.request().write_magic(b'\xc8\x51').send()
+            response = self.response()
+            if response.check_error():
+                raise StopIteration
+            yield response.read_key()
+
+    def match_prefix(self, prefix, max_keys=1024):
+        cdef:
+            bytes bprefix = _encode(prefix)
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        (request
+         .write_magic(b'\xc8\x58')
+         .write_ints((len(bprefix), max_keys))
+         .write_bytes(bprefix, False)
+         .send())
+
+        response = self.response()
+        if not response.check_error():
+            return response.read_keys()
 
     def misc(self, name, keys=None, data=None):
         cdef:

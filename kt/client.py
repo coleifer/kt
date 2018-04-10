@@ -292,6 +292,9 @@ class TokyoTyrant(BaseClient):
     def incr(self, key, n=1):
         return self._protocol.addint(key, n)
 
+    def incr_double(self, key, n=1.):
+        return self._protocol.adddouble(key, n)
+
     def misc(self, cmd, keys=None, data=None):
         return self._protocol.misc(cmd, keys, data)
 
@@ -309,3 +312,12 @@ class TokyoTyrant(BaseClient):
     @property
     def size(self):
         return self._protocol.size()
+
+    def match_prefix(self, prefix, max_keys=1024):
+        return self._protocol.match_prefix(prefix, max_keys)
+
+    def keys(self):
+        return self._protocol.keys()
+
+    def __iter__(self):
+        return iter(self._protocol.keys())

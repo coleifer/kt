@@ -15,9 +15,13 @@ assert tt.add('x', 'y')
 assert tt.get_bulk(['foo', 'bar', 'x']) == {'foo': 'barnuggie', 'x': 'y'}
 assert tt.incr('z', 1) == 1
 assert tt.incr('z', 3) == 4
-assert len(tt) == 3
+assert tt.incr_double('d', 3.14) == 3.14
+assert round(tt.incr_double('d', 3.15), 2) == 6.29
+assert len(tt) == 4
 tt.clear()
 tt.set_bulk({'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+assert sorted(tt.match_prefix('k')) == ['k1', 'k2', 'k3']
+assert sorted(tt) == ['k1', 'k2', 'k3']
 assert tt.misc('get', 'k1') == 'v1'
 assert tt.misc('get', 'k3') == 'v3'
 assert tt.misc('get', 'kx') is None
