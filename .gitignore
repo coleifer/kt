@@ -1,2 +1,4 @@
 kt/_binary.c
 kt/_binary*.so
+MANIFEST
+build/
