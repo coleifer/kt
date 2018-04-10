@@ -12,13 +12,14 @@ try:
 except ImportError:
     msgpack = None
 
-from ._binary import BinaryProtocol
-from ._binary import TokyoTyrantProtocol
+from ._binary import KTBinaryProtocol
+from ._binary import TTBinaryProtocol
 from ._binary import decode
 from ._binary import encode
 from .exceptions import ImproperlyConfigured
 from .exceptions import KyotoTycoonError
 from .exceptions import ProtocolError
+from .exceptions import ServerConnectionError
 from .exceptions import ServerError
 from .http import HttpProtocol
 
@@ -30,13 +31,11 @@ KT_PICKLE = 'pickle'
 KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_PICKLE))
 
 
-class KyotoTycoon(object):
-    def __init__(self, host='127.0.0.1', port=1978, default_db=0,
-                 serializer=KT_BINARY, decode_keys=True, auto_connect=True,
-                 timeout=None):
+class BaseClient(object):
+    def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
+                 decode_keys=True, auto_connect=True, timeout=None):
         self._host = host
         self._port = port
-        self._default_db = default_db
         self._serializer = serializer
         self._decode_keys = decode_keys
         self._auto_connect = auto_connect
@@ -66,10 +65,7 @@ class KyotoTycoon(object):
 
         # Session and socket used for rpc and binary protocols, respectively.
         self._connected = False
-
-        # Protocol handlers.
-        self._protocol_binary = BinaryProtocol(self)
-        self._protocol_http = HttpProtocol(self)
+        self._initialize_protocols()
 
         if self._auto_connect:
             self.open()
@@ -78,8 +74,7 @@ class KyotoTycoon(object):
         if self._connected:
             return False
 
-        self._protocol_binary.open()
-        self._protocol_http.open()
+        self._open_protocols()
         self._connected = True
         return True
 
@@ -87,70 +82,9 @@ class KyotoTycoon(object):
         if not self._connected:
             return False
 
-        self._protocol_binary.close()
-        self._protocol_http.close()
+        self._close_protocols()
         self._connected = False
         return True
-
-    def get(self, key, db=None):
-        return self._protocol_binary.get(key, db or self._default_db)
-
-    def set(self, key, value, db=None, expire_time=None):
-        return self._protocol_binary.set(key, value, db or self._default_db,
-                                         expire_time)
-
-    def remove(self, key, db=None):
-        return self._protocol_binary.remove(key, db or self._default_db)
-
-    def get_bulk(self, keys, db=None):
-        return self._protocol_binary.get_bulk(keys, db or self._default_db)
-
-    def set_bulk(self, __data=None, **kwargs):
-        db = kwargs.pop('db', None)
-        expire_time = kwargs.pop('expire_time', None)
-        if __data is not None:
-            kwargs.update(__data)
-        return self._protocol_binary.set_bulk(kwargs, db or self._default_db,
-                                              expire_time)
-
-    def remove_bulk(self, keys, db=None):
-        return self._protocol_binary.remove_bulk(keys, db or self._default_db)
-
-    def play_script(self, name, __data=None, **params):
-        if __data is not None:
-            params.update(__data)
-        return self._protocol_binary.play_script(name, params)
-
-    def status(self, db=None):
-        return self._protocol_http.status(db or self._default_db)
-
-    def report(self):
-        return self._protocol_http.report()
-
-    def clear(self, db=None):
-        return self._protocol_http.clear(db or self._default_db)
-
-    def add(self, key, value, db=None, expire_time=None):
-        return self._protocol_http.add(key, value, db or self._default_db,
-                                       expire_time)
-
-    def replace(self, key, value, db=None, expire_time=None):
-        return self._protocol_http.replace(key, value, db or self._default_db,
-                                           expire_time)
-
-    def append(self, key, value, db=None, expire_time=None):
-        return self._protocol_http.append(key, value, db or self._default_db,
-                                          expire_time)
-
-    def check(self, key, db=None):
-        return self._protocol_http.check(key, db or self._default_db)
-
-    def seize(self, key, db=None):
-        return self._protocol_http.seize(key, db or self._default_db)
-
-    def cas(self, key, old_val, new_val, db=None, expire_time=None):
-        return self._protocol_http.cas(key, old_val, new_val,
-                                       db or self._default_db, expire_time)
 
     def __enter__(self):
         self.open()
@@ -159,12 +93,108 @@ class KyotoTycoon(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         return
 
+
+class KyotoTycoon(BaseClient):
+    def __init__(self, *args, **kwargs):
+        self._default_db = kwargs.pop('default_db', 0)
+        super(KyotoTycoon, self).__init__(*args, **kwargs)
+
+    def _initialize_protocols(self):
+        # Protocol handlers.
+        self._protocol = KTBinaryProtocol(
+            host=self._host,
+            port=self._port,
+            decode_keys=self._decode_keys,
+            encode_value=self._encode_value,
+            decode_value=self._decode_value,
+            timeout=self._timeout)
+        self._protocol_http = HttpProtocol(
+            host=self._host,
+            port=self._port,
+            decode_keys=self._decode_keys,
+            encode_value=self._encode_value,
+            decode_value=self._decode_value)
+
+    def _open_protocols(self):
+        self._protocol.open()
+        self._protocol_http.open()
+
+    def _close_protocols(self):
+        self._protocol.close()
+        self._protocol_http.close()
+
+    def get(self, key, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.get(key, db)
+
+    def set(self, key, value, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol.set(key, value, db, expire_time)
+
+    def remove(self, key, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.remove(key, db)
+
+    def get_bulk(self, keys, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.get_bulk(keys, db)
+
+    def set_bulk(self, __data=None, **kwargs):
+        db = kwargs.pop('db', self._default_db)
+        expire_time = kwargs.pop('expire_time', None)
+        if __data is not None:
+            kwargs.update(__data)
+        return self._protocol.set_bulk(kwargs, db, expire_time)
+
+    def remove_bulk(self, keys, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.remove_bulk(keys, db)
+
+    def script(self, name, __data=None, **params):
+        if __data is not None:
+            params.update(__data)
+        return self._protocol.script(name, params)
+
+    def clear(self, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.clear(db)
+
+    def status(self, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.status(db)
+
+    def report(self):
+        return self._protocol_http.report()
+
+    def add(self, key, value, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.add(key, value, db, expire_time)
+
+    def replace(self, key, value, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.replace(key, value, db, expire_time)
+
+    def append(self, key, value, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.append(key, value, db, expire_time)
+
+    def exists(self, key, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.check(key, db)
+
+    def seize(self, key, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.seize(key, db)
+
+    def cas(self, key, old_val, new_val, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.cas(key, old_val, new_val, db, expire_time)
+
     def _kdb_from_key(self, key):
         if isinstance(key, tuple):
             if len(key) != 2:
                 raise ValueError('expected key-tuple of (key, db)')
             return key
-
         return key, self._default_db
 
     def __getitem__(self, key):
@@ -183,8 +213,11 @@ class KyotoTycoon(object):
     def __delitem__(self, key):
         self.remove(*self._kdb_from_key(key))
 
+    pop = seize
+    update = set_bulk
+
     def __contains__(self, key):
-        return self.check(*self._kdb_from_key(key))
+        return self.exists(*self._kdb_from_key(key))
 
     def __len__(self):
         return int(self.status(self._default_db)['count'])
@@ -197,76 +230,26 @@ class KyotoTycoon(object):
     def path(self):
         return decode(self.status(self._default_db)['path'])
 
-    pop = seize
-    update = set_bulk
-
     def set_database(self, db):
         self._default_db = db
         return self
 
 
-class TokyoTyrant(object):
-    def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
-                 decode_keys=True, auto_connect=True, timeout=None):
-        self._host = host
-        self._port = port
-        self._serializer = serializer
-        self._decode_keys = decode_keys
-        self._auto_connect = auto_connect
-        self._timeout = timeout
-
-        if self._serializer == KT_MSGPACK and msgpack is None:
-            raise ImproperlyConfigured('msgpack library not found')
-        elif self._serializer == KT_BINARY:
-            encode_value = encode
-            decode_value = decode
-        elif self._serializer == KT_JSON:
-            encode_value = lambda v: (json
-                                      .dumps(v, separators=(',', ':'))
-                                      .encode('utf-8'))
-            decode_value = lambda v: json.loads(v.decode('utf-8'))
-        elif self._serializer == KT_MSGPACK:
-            encode_value = msgpack.packb
-            decode_value = msgpack.unpackb
-        elif self._serializer == KT_PICKLE:
-            encode_value = partial(pickle.dumps,
-                                   protocol=pickle.HIGHEST_PROTOCOL)
-            decode_value = pickle.loads
-        else:
-            raise ImproperlyConfigured('unrecognized serializer "%s" - use one'
-                                       ' of: %s' % (self._serializer,
-                                                    ','.join(KT_SERIALIZERS)))
-
-        # Session and socket used for rpc and binary protocols, respectively.
-        self._connected = False
-
-        # Protocol handlers.
-        self._protocol = TokyoTyrantProtocol(
+class TokyoTyrant(BaseClient):
+    def _initialize_protocols(self):
+        self._protocol = TTBinaryProtocol(
             host=self._host,
             port=self._port,
             decode_keys=self._decode_keys,
-            encode_value=encode_value,
-            decode_value=decode_value,
+            encode_value=self._encode_value,
+            decode_value=self._decode_value,
             timeout=self._timeout)
 
-        if self._auto_connect:
-            self.open()
+    def _open_protocols(self):
+        return self._protocol.open()
 
-    def open(self):
-        if self._connected:
-            return False
-
-        self._protocol.open()
-        self._connected = True
-        return True
-
-    def close(self):
-        if not self._connected:
-            return False
-
-        self._protocol.close()
-        self._connected = False
-        return True
+    def _close_protocols(self):
+        return self._protocol.close()
 
     def get(self, key):
         return self._protocol.get(key)
@@ -274,20 +257,11 @@ class TokyoTyrant(object):
     def set(self, key, value):
         return self._protocol.put(key, value)
 
-    def add(self, key, value):
-        return self._protocol.putkeep(key, value)
-
-    def append(self, key, value):
-        return self._protocol.putcat(key, value)
-
     def remove(self, key):
         return self._protocol.out(key)
 
-    def incr(self, key, n=1):
-        return self._protocol.addint(key, n)
-
     def get_bulk(self, keys):
-        return self._protocol.mget(keys)
+        return self._protocol.get_bulk(keys)
 
     def set_bulk(self, __data=None, **kwargs):
         if __data is not None:
@@ -297,11 +271,29 @@ class TokyoTyrant(object):
     def remove_bulk(self, keys):
         return self._protocol.misc('outlist', keys=keys)
 
+    def script(self, name, key=None, value=None):
+        return self._protocol.script(name, key, value)
+
+    def clear(self):
+        return self._protocol.vanish()
+
+    def status(self):
+        return self._protocol.stat()
+
+    def add(self, key, value):
+        return self._protocol.putkeep(key, value)
+
+    def append(self, key, value):
+        return self._protocol.putcat(key, value)
+
+    def exists(self, key):
+        return self._protocol.vsiz(key)
+
+    def incr(self, key, n=1):
+        return self._protocol.addint(key, n)
+
     def misc(self, cmd, keys=None, data=None):
         return self._protocol.misc(cmd, keys, data)
-
-    def check(self, key):
-        return self._protocol.vsiz(key)
 
     __getitem__ = get
     __setitem__ = set
@@ -314,15 +306,6 @@ class TokyoTyrant(object):
     def __len__(self):
         return self._protocol.rnum()
 
-    def clear(self):
-        return self._protocol.vanish()
-
     @property
     def size(self):
         return self._protocol.size()
-
-    def status(self):
-        return self._protocol.stat()
-
-    def play_script(self, name, key=None, value=None):
-        return self._protocol.ext(name, 0, key, value)

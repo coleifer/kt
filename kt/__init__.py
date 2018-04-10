@@ -11,4 +11,5 @@ from .embedded import EmbeddedTokyoTyrantServer
 from .exceptions import ImproperlyConfigured
 from .exceptions import KyotoTycoonError
 from .exceptions import ProtocolError
+from .exceptions import ServerConnectionError
 from .exceptions import ServerError

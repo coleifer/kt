@@ -15,6 +15,7 @@ import requests
 
 from ._binary import decode
 from ._binary import encode
+from ._binary import noop_decode
 from .exceptions import ProtocolError
 from .exceptions import ServerError
 
@@ -39,10 +40,17 @@ def decode_from_content_type(content_type):
 class HttpProtocol(object):
     _content_type = 'text/tab-separated-values; colenc=B'
 
-    def __init__(self, client):
-        self.client = client
-        self._prefix = 'http://%s:%s/rpc' % (self.client._host,
-                                             self.client._port)
+    def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
+                 encode_value=None, decode_value=None, timeout=None):
+        self._host = host
+        self._port = port
+        if decode_keys:
+            self.decode_key = decode
+        else:
+            self.decode_key = noop_decode
+        self.encode_value = encode_value or encode
+        self.decode_value = decode_value or decode
+        self._prefix = 'http://%s:%s/rpc' % (self._host, self._port)
         self._session = None
 
     def open(self):
@@ -87,9 +95,7 @@ class HttpProtocol(object):
             if decoder is not None:
                 key, value = decoder(key), decoder(value)
 
-            if self.client._decode_keys:
-                key = decode(key)
-            accum[key] = value
+            accum[self.decode_key(key)] = value
 
         return accum
 
@@ -135,7 +141,7 @@ class HttpProtocol(object):
 
         accum = {}
         for key, value in params.items():
-            accum['_%s' % key] = self.client._encode_value(value)
+            accum['_%s' % key] = self.encode_value(value)
 
         resp, status = self.request('/play_script', accum, False, (450,))
         if status == 450:
@@ -143,18 +149,18 @@ class HttpProtocol(object):
 
         accum = {}
         for key, value in resp.items():
-            accum[key[1:]] = self.client._decode_value(value)
+            accum[key[1:]] = self.decode_value(value)
         return accum
 
     def get(self, key, db=None):
         resp, status = self.request('/get', {'key': key}, db, (450,))
         if status == 450:
             return
-        value = resp['value' if self.client._decode_keys else b'value']
-        return self.client._decode_value(value)
+        value = resp[self.decode_key(b'value')]
+        return self.decode_value(value)
 
     def _simple_write(self, cmd, key, value, db=None, expire_time=None):
-        data = {'key': key, 'value': self.client._encode_value(value)}
+        data = {'key': key, 'value': self.encode_value(value)}
         if expire_time is not None:
             data['xt'] = str(expire_time)
         resp, status = self.request('/%s' % cmd, data, db, (450,))
@@ -187,7 +193,7 @@ class HttpProtocol(object):
 
         # Keys must be prefixed by "_".
         for key, value in data.items():
-            accum['_%s' % key] = self.client._encode_value(value)
+            accum['_%s' % key] = self.encode_value(value)
 
         resp, status = self.request('/set_bulk', accum, db)
         return resp
@@ -195,25 +201,25 @@ class HttpProtocol(object):
     def get_bulk(self, keys, db=None):
         resp, status = self.request('/get_bulk', keys, db)
 
-        n = resp.pop('num' if self.client._decode_keys else b'num', b'0')
+        n = resp.pop(self.decode_key(b'num'))
         if n == b'0':
             return {}
 
         accum = {}
         for key, value in resp.items():
-            accum[key[1:]] = self.client._decode_value(value)
+            accum[key[1:]] = self.decode_value(value)
         return accum
 
     def remove_bulk(self, keys, db=None):
         resp, status = self.request('/remove_bulk', keys, db)
-        return int(resp.pop('num' if self.client._decode_keys else b'num'))
+        return int(resp.pop(self.decode_key(b'num')))
 
     def seize(self, key, db=None):
         resp, status = self.request('/seize', {'key': key}, db, (450,))
         if status == 450:
             return
-        value = resp['value' if self.client._decode_keys else b'value']
-        return self.client._decode_value(value)
+        value = resp[self.decode_key(b'value')]
+        return self.decode_value(value)
 
     def cas(self, key, old_val, new_val, db=None, expire_time=None):
         if old_val is None and new_val is None:
@@ -221,9 +227,9 @@ class HttpProtocol(object):
 
         data = {'key': key}
         if old_val is not None:
-            data['oval'] = self.client._encode_value(old_val)
+            data['oval'] = self.encode_value(old_val)
         if new_val is not None:
-            data['nval'] = self.client._encode_value(new_val)
+            data['nval'] = self.encode_value(new_val)
         if expire_time is not None:
             data['xt'] = str(expire_time)
 

@@ -7,7 +7,7 @@ assert tt.set('foo', 'bar') == 1
 assert tt.get('foo') == 'bar'
 assert tt.append('foo', 'nuggie')
 assert tt.get('foo') == 'barnuggie'
-assert tt.check('foo') == 9
+assert tt.exists('foo') == 9
 assert not tt.add('foo', 'baze')
 assert tt.get('foo') == 'barnuggie'
 assert tt.get('x') is None
