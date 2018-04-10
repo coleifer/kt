@@ -309,7 +309,7 @@ class TokyoTyrant(object):
     update = set_bulk
 
     def __contains__(self, key):
-        return True if self.check(key) else False
+        return self._protocol.vsiz(key) is not None
 
     def __len__(self):
         return self._protocol.rnum()
