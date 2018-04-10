@@ -286,6 +286,14 @@ class TokyoTyrant(BaseClient):
     def append(self, key, value):
         return self._protocol.putcat(key, value)
 
+    def get_part(self, key, start=None, end=None):
+        params = [key]
+        if start is not None or end is not None:
+            params.append(str(start or 0))
+        if end is not None:
+            params.append(str(end))
+        return self._protocol.misc('getpart', params)
+
     def exists(self, key):
         return self._protocol.vsiz(key)
 
@@ -298,7 +306,12 @@ class TokyoTyrant(BaseClient):
     def misc(self, cmd, keys=None, data=None):
         return self._protocol.misc(cmd, keys, data)
 
-    __getitem__ = get
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return self.get_range(item.start, item.stop or None)
+        else:
+            return self.get(item)
+
     __setitem__ = set
     __delitem__ = remove
     update = set_bulk
@@ -313,8 +326,40 @@ class TokyoTyrant(BaseClient):
     def size(self):
         return self._protocol.size()
 
+    @property
+    def error(self):
+        return self._protocol.misc('error', [])
+
+    def optimize(self):
+        return self._protocol.misc('optimize', [])
+
+    def clear_cache(self):
+        return self._protocol.misc('cacheclear', [])
+
+    def get_range(self, start, stop=None, max_keys=0):
+        args = [start, str(max_keys)]
+        if stop is not None:
+            args.append(stop)
+        rv = self._protocol.misc('range', args)
+        return {} if rv is True else rv
+
     def match_prefix(self, prefix, max_keys=1024):
         return self._protocol.match_prefix(prefix, max_keys)
+
+    def match_regex(self, regex, max_keys=1024):
+        rv = self._protocol.misc('regex', [regex, str(max_keys)])
+        return {} if rv is True else rv
+
+    def iter_from(self, start_key):
+        self._protocol.misc('iterinit', [item.start])
+        accum = {}
+        while True:
+            kv = self._protocol.misc('iternext', [])
+            if kv:
+                accum.update(kv)
+            else:
+                break
+        return accum
 
     def keys(self):
         return self._protocol.keys()

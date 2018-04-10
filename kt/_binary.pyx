@@ -602,6 +602,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
     def misc(self, name, keys=None, data=None):
         cdef:
+            int rv
             RequestBuffer request = self.request()
             TTResponseHandler response
 
@@ -610,12 +611,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if keys is not None and data is not None:
             raise ValueError('misc() requires only one of "keys" or "data" be '
                              'specified.')
-        cmds = set(('put', 'out', 'get', 'putlist', 'outlist', 'getlist'))
-        if name not in cmds:
-            raise ValueError('unsupported command. use one of %s' %
-                             ', '.join(sorted(cmds)))
-
-        if keys is not None and not isinstance(keys, (list, tuple)):
+        elif keys is None and data is None:
+            keys = []
+        elif keys is not None and not isinstance(keys, (list, tuple)):
             keys = (keys,)
 
         if name == 'put' and len(data) > 1:
@@ -652,18 +650,16 @@ cdef class TTBinaryProtocol(BinaryProtocol):
                 request.write_key(key)
 
         request.send()
-        response = self.response()
-        if response.check_error():
-            return
 
+        response = self.response()
+        rv = response.check_error()  # 1 if simple error, 0 if OK.
         nelem = response.read_int()
 
         if nelem == 0 and bname != b'getlist':
-            return True
+            return rv == 0
         elif nelem == 1:
             nval = response.read_int()
-            if nval > 0:
-                return self.decode_value(self._socket.read(nval))
+            return self.decode_value(self._socket.read(nval))
         else:
             accum = {}
             for _ in range(nelem // 2):
