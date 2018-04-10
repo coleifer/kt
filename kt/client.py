@@ -270,11 +270,9 @@ class TokyoTyrant(object):
 
     def get(self, key):
         return self._protocol.get(key)
-    __getitem__ = get
 
     def set(self, key, value):
         return self._protocol.put(key, value)
-    __setitem__ = set
 
     def add(self, key, value):
         return self._protocol.putkeep(key, value)
@@ -284,7 +282,6 @@ class TokyoTyrant(object):
 
     def remove(self, key):
         return self._protocol.out(key)
-    __delitem__ = remove
 
     def incr(self, key, n=1):
         return self._protocol.addint(key, n)
@@ -292,11 +289,24 @@ class TokyoTyrant(object):
     def get_bulk(self, keys):
         return self._protocol.mget(keys)
 
+    def set_bulk(self, __data=None, **kwargs):
+        if __data is not None:
+            kwargs.update(__data)
+        return self._protocol.misc('putlist', data=kwargs)
+
+    def remove_bulk(self, keys):
+        return self._protocol.misc('outlist', keys=keys)
+
+    def misc(self, cmd, keys=None, data=None):
+        return self._protocol.misc(cmd, keys, data)
+
     def check(self, key):
         return self._protocol.vsiz(key)
 
-    def clear(self):
-        return self._protocol.vanish()
+    __getitem__ = get
+    __setitem__ = set
+    __delitem__ = remove
+    update = set_bulk
 
     def __contains__(self, key):
         return True if self.check(key) else False
@@ -304,6 +314,12 @@ class TokyoTyrant(object):
     def __len__(self):
         return self._protocol.rnum()
 
+    def clear(self):
+        return self._protocol.vanish()
+
     @property
     def size(self):
         return self._protocol.size()
+
+    def play_script(self, name, key=None, value=None):
+        return self._protocol.ext(name, 0, key, value)

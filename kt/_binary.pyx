@@ -449,14 +449,14 @@ cdef class TokyoTyrantProtocol(object):
             nval, = s_unpack('!I', self._socket.read(4))
             return nval
 
-    def ext(self, name, int options, key, value):
+    def ext(self, name, int options, key=None, value=None):
         cdef:
             bytes bname = _encode(name)
-            bytes bkey = _encode(key)
-            bytes bval = self._encode_value(value)
+            bytes bkey = _encode(key or '')
+            bytes bval = self._encode_value(value or '')
 
         buf = io.BytesIO()
-        buf.write(b'\xc8\x70')
+        buf.write(b'\xc8\x68')
         buf.write(s_pack('!IIII', len(bname), options, len(bkey), len(bval)))
         buf.write(bname)
         buf.write(bkey)
@@ -470,6 +470,85 @@ cdef class TokyoTyrantProtocol(object):
         cdef int resplen
         resplen, = s_unpack('!I', self._socket.read(4))
         return self._socket.read(resplen)
+
+    def misc(self, name, keys=None, data=None):
+        # TokyoTyrant supports "fluent" commands - kinda like Redis, you pass
+        # a command name and the requested parameters, get appropriate resp.
+        if keys is not None and data is not None:
+            raise ValueError('misc() requires only one of "keys" or "data" be '
+                             'specified.')
+        cmds = set(('put', 'out', 'get', 'putlist', 'outlist', 'getlist'))
+        if name not in cmds:
+            raise ValueError('unsupported command. use one of %s' %
+                             ', '.join(sorted(cmds)))
+
+        if keys is not None and not isinstance(keys, (list, tuple)):
+            keys = (keys,)
+
+        if name == 'put' and len(data) > 1:
+            name = 'putlist'
+        elif name == 'get' and len(keys) > 1:
+            name = 'getlist'
+        elif name == 'out' and len(keys) > 1:
+            name = 'outlist'
+
+        cdef:
+            bint is_put = False
+            bytes bkey, bval
+            bytes bname = _encode(name)
+            int nargs
+
+        # Number of parameters we will be providing.
+        if name.startswith('put'):
+            nargs = len(data) * 2
+        else:
+            nargs = len(keys)
+
+        buf = io.BytesIO()
+        bw = buf.write
+        bw(b'\xc8\x90')
+        bw(s_pack('!III', len(bname), 0, nargs))
+        bw(bname)
+
+        if bname.startswith(b'put'):
+            for key, value in data.items():
+                bkey = _encode(key)
+                bval = self._encode_value(value)
+                bw(s_pack('!I', len(bkey)))
+                bw(bkey)
+                bw(s_pack('!I', len(bval)))
+                bw(bval)
+        else:
+            for key in keys:
+                bkey = _encode(key)
+                bw(s_pack('!I', len(bkey)))
+                bw(bkey)
+
+        self._socket.write(buf.getvalue())
+        self._socket.flush()
+        if not self._check_response():
+            return
+
+        read = self._socket.read
+        nelem, = s_unpack('!I', read(4))
+
+        if nelem == 0 and bname != b'getlist':
+            return True
+        elif nelem == 1:
+            nval, = s_unpack('!I', read(4))
+            if nval > 0:
+                bval = self._socket.read(nval)
+                return self._decode_value(bval)
+        else:
+            accum = {}
+            for _ in range(nelem // 2):
+                klen, = s_unpack('!I', read(4))
+                bkey = read(klen)
+                vlen, = s_unpack('!I', read(4))
+                bval = read(vlen)
+                key = _decode(bkey) if self._decode_keys else bkey
+                accum[key] = self._decode_value(bval)
+            return accum
 
     def vanish(self):
         self._socket.write(b'\xc8\x72')
