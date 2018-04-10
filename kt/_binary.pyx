@@ -567,4 +567,11 @@ cdef class TokyoTyrantProtocol(object):
         return self._long_cmd(b'\xc8\x80')
 
     def size(self):
-        return self._long_cmd(b'\xc8\x88')
+        return self._long_cmd(b'\xc8\x81')
+
+    def stat(self):
+        self._socket.write(b'\xc8\x88')
+        self._socket.flush()
+        self._check_response()
+        n, = s_unpack('!I', self._socket.read(4))
+        return self._socket.read(n)

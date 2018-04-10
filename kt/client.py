@@ -321,5 +321,8 @@ class TokyoTyrant(object):
     def size(self):
         return self._protocol.size()
 
+    def status(self):
+        return self._protocol.stat()
+
     def play_script(self, name, key=None, value=None):
         return self._protocol.ext(name, 0, key, value)
