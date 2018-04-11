@@ -155,9 +155,10 @@ class KyotoTycoon(BaseClient):
         return self._protocol.remove_bulk(keys, db)
 
     def script(self, name, __data=None, **params):
+        encode_values = params.pop('encode_values', True)
         if __data is not None:
             params.update(__data)
-        return self._protocol.script(name, params)
+        return self._protocol.script(name, params, encode_values)
 
     def clear(self, db=None):
         db = self._default_db if db is None else db
