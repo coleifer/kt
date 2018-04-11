@@ -3,6 +3,7 @@ __version__ = '0.5.0'
 from .client import KT_BINARY
 from .client import KT_JSON
 from .client import KT_MSGPACK
+from .client import KT_NONE
 from .client import KT_PICKLE
 from .client import KyotoTycoon
 from .client import TokyoTyrant

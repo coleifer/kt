@@ -27,8 +27,9 @@ from .http import HttpProtocol
 KT_BINARY = 'binary'
 KT_JSON = 'json'
 KT_MSGPACK = 'msgpack'
+KT_NONE = 'none'
 KT_PICKLE = 'pickle'
-KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_PICKLE))
+KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE))
 
 
 class BaseClient(object):
@@ -54,6 +55,9 @@ class BaseClient(object):
         elif self._serializer == KT_MSGPACK:
             self._encode_value = msgpack.packb
             self._decode_value = msgpack.unpackb
+        elif self._serializer == KT_NONE:
+            self._encode_value = lambda x: x
+            self._decode_value = lambda x: x
         elif self._serializer == KT_PICKLE:
             self._encode_value = partial(pickle.dumps,
                                          protocol=pickle.HIGHEST_PROTOCOL)
