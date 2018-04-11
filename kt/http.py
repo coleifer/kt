@@ -198,18 +198,6 @@ class HttpProtocol(object):
         resp, status = self.request('/set_bulk', accum, db)
         return resp
 
-    def get_bulk(self, keys, db=None):
-        resp, status = self.request('/get_bulk', keys, db)
-
-        n = resp.pop(self.decode_key(b'num'))
-        if n == b'0':
-            return {}
-
-        accum = {}
-        for key, value in resp.items():
-            accum[key[1:]] = self.decode_value(value)
-        return accum
-
     def remove_bulk(self, keys, db=None):
         resp, status = self.request('/remove_bulk', keys, db)
         return int(resp.pop(self.decode_key(b'num')))
@@ -253,3 +241,42 @@ class HttpProtocol(object):
             data['xt'] = str(expire_time)
         resp, status = self.request('/increment_double', data, db)
         return float(resp['num'])
+
+    def _do_bulk_command(self, cmd, params, db=None):
+        resp, status = self.request(cmd, params, db)
+
+        n = resp.pop(self.decode_key(b'num'))
+        if n == b'0':
+            return {}
+
+        accum = {}
+        for key, value in resp.items():
+            accum[key[1:]] = self.decode_value(value)
+        return accum
+
+    def get_bulk(self, keys, db=None):
+        return self._do_bulk_command('/get_bulk', keys, db)
+
+    def _do_bulk_sorted_command(self, cmd, params, db=None):
+        results = self._do_bulk_command(cmd, params, db)
+        return sorted(results, key=lambda k: int(results[k]))
+
+    def match_prefix(self, prefix, max_keys=None, db=None):
+        data = {'prefix': prefix}
+        if max_keys is not None:
+            data['max'] = str(max_keys)
+        return self._do_bulk_sorted_command('/match_prefix', data, db)
+
+    def match_regex(self, regex, max_keys=None, db=None):
+        data = {'regex': regex}
+        if max_keys is not None:
+            data['max'] = str(max_keys)
+        return self._do_bulk_sorted_command('/match_regex', data, db)
+
+    def match_similar(self, origin, distance=None, max_keys=None, db=None):
+        data = {'origin': origin, 'utf': 'true'}
+        if distance is not None:
+            data['range'] = str(distance)
+        if max_keys is not None:
+            data['max'] = str(max_keys)
+        return self._do_bulk_sorted_command('/match_similar', data, db)
