@@ -124,7 +124,7 @@ class HttpProtocol(object):
                 r.status_code)
 
     def status(self, db=None):
-        resp, status = self.request('/status', {}, db)
+        resp, status = self.request('/status', {'DB': db or 0})
         return resp
 
     def report(self):
