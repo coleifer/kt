@@ -135,7 +135,7 @@ class HttpProtocol(object):
         resp, status = self.request('/clear', {}, db)
         return status == 200
 
-    def play_script(self, name, __data=None, **params):
+    def script(self, name, __data=None, **params):
         if __data is not None:
             params.update(__data)
 
@@ -235,3 +235,21 @@ class HttpProtocol(object):
 
         resp, status = self.request('/cas', data, db, (450,))
         return status != 450
+
+    def increment(self, key, n=1, orig=None, db=None, expire_time=None):
+        data = {'key': key, 'num': str(n)}
+        if orig is not None:
+            data['orig'] = str(orig)
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+        resp, status = self.request('/increment', data, db)
+        return int(resp['num'])
+
+    def increment_double(self, key, n=1, orig=None, db=None, expire_time=None):
+        data = {'key': key, 'num': str(n)}
+        if orig is not None:
+            data['orig'] = str(orig)
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+        resp, status = self.request('/increment_double', data, db)
+        return float(resp['num'])

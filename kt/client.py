@@ -194,6 +194,15 @@ class KyotoTycoon(BaseClient):
         db = self._default_db if db is None else db
         return self._protocol_http.cas(key, old_val, new_val, db, expire_time)
 
+    def incr(self, key, n=1, orig=None, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.increment(key, n, orig, db, expire_time)
+
+    def incr_double(self, key, n=1., orig=None, db=None, expire_time=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.increment_double(key, n, orig, db,
+                                                    expire_time)
+
     def _kdb_from_key(self, key):
         if isinstance(key, tuple):
             if len(key) != 2:
