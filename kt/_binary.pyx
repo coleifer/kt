@@ -193,6 +193,9 @@ cdef class BaseResponseHandler(object):
     cdef bytes read_bytes(self):
         return self._socket.read(self.read_int())
 
+    cdef bytes read(self, int n):
+        return self._socket.read(n)
+
     cdef read_key(self):
         return self.key_decode(self.read_bytes())
 
@@ -407,9 +410,10 @@ cdef class KTBinaryProtocol(BinaryProtocol):
     def remove(self, key, db):
         return self.remove_bulk((key,), db)
 
-    def script(self, name, data=None):
+    def script(self, name, data=None, encode_values=True):
         cdef:
             bytes bname = _encode(name)
+            bytes bkey, bval
             RequestBuffer request = self.request()
             KTResponseHandler response
 
@@ -417,13 +421,31 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         (request
          .write_magic(KT_PLAY_SCRIPT)
          .write_ints((0, len(bname), len(data)))
-         .write_bytes(bname, False)
-         .write_keys_values(data)
-         .send())
+         .write_bytes(bname, False))
+
+        for key in data:
+            bkey = _encode(key)
+            if encode_values:
+                bval = self.encode_value(data[key])
+            else:
+                bval = _encode(data[key])
+            (request
+             .write_ints((len(bkey), len(bval)))
+             .write_bytes(bkey, False)
+             .write_bytes(bval, False))
+
+        request.send()
 
         response = self.response()
         response.check_error(KT_PLAY_SCRIPT)
-        return response.read_keys_values()
+
+        if encode_values:
+            return response.read_keys_values()
+        else:
+            # Handle reading "raw" with noop-decoder.
+            response = KTResponseHandler(self._socket, self.decode_key,
+                                         noop_decode)
+            return response.read_keys_values()
 
 
 cdef class TTBinaryProtocol(BinaryProtocol):
