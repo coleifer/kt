@@ -95,7 +95,23 @@ class BaseClient(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        return
+        self.close()
+
+    @property
+    def lua(self):
+        if not hasattr(self, '_script_runner'):
+            self._script_runner = ScriptRunner(self)
+        return self._script_runner
+
+
+class ScriptRunner(object):
+    def __init__(self, client):
+        self.client = client
+
+    def __getattr__(self, attr_name):
+        def run_script(*args, **kwargs):
+            return self.client.script(attr_name, *args, **kwargs)
+        return run_script
 
 
 class KyotoTycoon(BaseClient):
