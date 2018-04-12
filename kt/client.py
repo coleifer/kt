@@ -34,12 +34,11 @@ KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE))
 
 class BaseClient(object):
     def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
-                 decode_keys=True, auto_connect=True, timeout=None):
+                 decode_keys=True, timeout=None):
         self._host = host
         self._port = port
         self._serializer = serializer
         self._decode_keys = decode_keys
-        self._auto_connect = auto_connect
         self._timeout = timeout
 
         if self._serializer == KT_MSGPACK and msgpack is None:
@@ -68,34 +67,7 @@ class BaseClient(object):
                                                     ','.join(KT_SERIALIZERS)))
 
         # Session and socket used for rpc and binary protocols, respectively.
-        self._connected = False
         self._initialize_protocols()
-
-        if self._auto_connect:
-            self.open()
-
-    def open(self):
-        if self._connected:
-            return False
-
-        self._open_protocols()
-        self._connected = True
-        return True
-
-    def close(self):
-        if not self._connected:
-            return False
-
-        self._close_protocols()
-        self._connected = False
-        return True
-
-    def __enter__(self):
-        self.open()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
 
     @property
     def lua(self):
@@ -134,14 +106,6 @@ class KyotoTycoon(BaseClient):
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
             decode_value=self._decode_value)
-
-    def _open_protocols(self):
-        self._protocol.open()
-        self._protocol_http.open()
-
-    def _close_protocols(self):
-        self._protocol.close()
-        self._protocol_http.close()
 
     def get(self, key, db=None):
         db = self._default_db if db is None else db
@@ -284,12 +248,6 @@ class TokyoTyrant(BaseClient):
             encode_value=self._encode_value,
             decode_value=self._decode_value,
             timeout=self._timeout)
-
-    def _open_protocols(self):
-        return self._protocol.open()
-
-    def _close_protocols(self):
-        return self._protocol.close()
 
     def get(self, key):
         return self._protocol.get(key)

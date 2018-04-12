@@ -51,22 +51,8 @@ class HttpProtocol(object):
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
         self._prefix = 'http://%s:%s/rpc' % (self._host, self._port)
-        self._session = None
-
-    def open(self):
-        if self._session is not None:
-            return False
-
         self._session = requests.Session()
         self._session.headers['Content-Type'] = self._content_type
-        return True
-
-    def close(self):
-        if self._session is None:
-            return False
-
-        self._session = None
-        return True
 
     def _encode_keys_values(self, data):
         accum = []
@@ -74,7 +60,6 @@ class HttpProtocol(object):
             bkey = encode(key)
             bvalue = encode(value)
             accum.append(b'%s\t%s' % (b64encode(bkey), b64encode(bvalue)))
-
         return b'\n'.join(accum)
 
     def _encode_keys(self, keys):

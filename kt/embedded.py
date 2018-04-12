@@ -105,7 +105,9 @@ class EmbeddedServer(object):
         while attempts < 20:
             attempts += 1
             try:
-                self._client = self._create_client()
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((self._host, self._port))
+                s.close()
                 return True
             except socket.error:
                 time.sleep(0.1)

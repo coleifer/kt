@@ -41,8 +41,6 @@ assert len(kt) == 1
 assert kt.clear()
 assert len(kt) == 0
 
-assert kt.close()
-
 e = EmbeddedServer()
 e.run()
 kt = e.client

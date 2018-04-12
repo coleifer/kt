@@ -3,10 +3,15 @@ from cpython.unicode cimport PyUnicode_AsUTF8String
 from cpython.unicode cimport PyUnicode_Check
 from cpython.version cimport PY_MAJOR_VERSION
 
+import heapq
 import io
 import math
 import socket
 import struct
+try:
+    from threading import get_ident
+except ImportError:
+    from thread import get_ident
 import time
 
 from kt.exceptions import ProtocolError
@@ -62,6 +67,69 @@ def decode(obj):
 
 def noop_decode(obj):
     return obj
+
+
+cdef class SocketPool(object):
+    cdef:
+        dict in_use
+        list free
+        readonly int max_age, port
+        readonly str host
+        readonly timeout
+
+    def __init__(self, host, port, timeout=None, max_age=60):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.max_age = max_age
+        self.in_use = {}
+        self.free = []
+
+    cdef checkout(self):
+        cdef:
+            float now = time.time()
+            float ts
+            long tid = get_ident()
+
+        if tid in self.in_use:
+            return self.in_use[tid]
+
+        while self.free:
+            ts, sock = heapq.heappop(self.free)
+            if ts < now - self.max_age:
+                sock.close()
+            else:
+                self.in_use[tid] = sock
+                return sock
+
+        sock = self.create_socket_file()
+        self.in_use[tid] = sock
+        return sock
+
+    cdef create_socket_file(self):
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((self.host, self.port))
+        if self.timeout:
+            conn.settimeout(self.timeout)
+        return conn.makefile('rwb')
+
+    cdef checkin(self):
+        cdef long tid = get_ident()
+        if tid in self.in_use:
+            heapq.heappush(self.free, (time.time(), self.in_use.pop(tid)))
+            return True
+        return False
+
+    cdef close(self):
+        cdef long tid = get_ident()
+        sock = self.in_use.pop(tid, None)
+        if sock:
+            try:
+                sock.close()
+            except OSError:
+                pass
+            return True
+        return False
 
 
 cdef class RequestBuffer(object):
@@ -292,7 +360,7 @@ cdef class BinaryProtocol(object):
         readonly decode_key
         readonly encode_value
         readonly decode_value
-        _socket
+        readonly SocketPool _socket_pool
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
                  encode_value=None, decode_value=None, timeout=None):
@@ -305,38 +373,14 @@ cdef class BinaryProtocol(object):
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
         self._timeout = timeout
-        self._socket = None
+        self._socket_pool = SocketPool(self._host, self._port, self._timeout)
 
     def __del__(self):
-        if self._socket is not None:
-            self._socket.close()
-
-    def open(self):
-        if self._socket is not None:
-            return False
-
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.connect((self._host, self._port))
-        if self._timeout:
-            conn.settimeout(self._timeout)
-        self._socket = conn.makefile('rwb')
-        return True
-
-    def close(self):
-        if self._socket is None:
-            return False
-
-        try:
-            self._socket.close()
-        except OSError:
-            pass
-
-        self._socket = None
-        return True
+        self._socket_pool.close()
 
     cdef RequestBuffer request(self):
         return RequestBuffer(
-            self._socket,
+            self._socket_pool.checkout(),
             encode,
             self.encode_value)
 
@@ -344,7 +388,7 @@ cdef class BinaryProtocol(object):
 cdef class KTBinaryProtocol(BinaryProtocol):
     cdef KTResponseHandler response(self):
         return KTResponseHandler(
-            self._socket,
+            self._socket_pool.checkout(),
             self.decode_key,
             self.decode_value)
 
@@ -451,7 +495,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 cdef class TTBinaryProtocol(BinaryProtocol):
     cdef TTResponseHandler response(self):
         return TTResponseHandler(
-            self._socket,
+            self._socket_pool.checkout(),
             self.decode_key,
             self.decode_value)
 
@@ -680,8 +724,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if nelem == 0 and bname != b'getlist':
             return rv == 0
         elif nelem == 1:
-            nval = response.read_int()
-            return self.decode_value(self._socket.read(nval))
+            return response.read_value()
         else:
             accum = {}
             for _ in range(nelem // 2):
