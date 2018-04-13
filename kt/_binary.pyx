@@ -735,7 +735,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
     def vanish(self):
         self.request().write_magic(b'\xc8\x72').send()
-        return self.response().check_error()
+        return self.response().check_error() == 0
 
     def _long_cmd(self, bytes bmagic):
         self.request().write_magic(bmagic).send()

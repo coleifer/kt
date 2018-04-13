@@ -1,5 +1,6 @@
 from functools import partial
 import json
+import re
 import socket
 import time
 try:
@@ -226,6 +227,9 @@ class KyotoTycoon(BaseClient):
         return self._protocol_http.match_similar(origin, distance, max_keys,
                                                  db)
 
+    def keys(self, db=None):
+        return self.match_prefix('', db=db)
+
     @property
     def size(self):
         return int(self.status(self._default_db)['size'])
@@ -276,7 +280,16 @@ class TokyoTyrant(BaseClient):
         return self._protocol.vanish()
 
     def status(self):
-        return self._protocol.stat()
+        data = self._protocol.stat()
+        status = {}
+        for key_value in data.decode('utf-8').splitlines():
+            key, value = key_value.split('\t', 1)
+            if value.isdigit():
+                value = int(value)
+            elif re.match('^\d+\.\d+$', value):
+                value = float(value)
+            status[key] = value
+        return status
 
     def add(self, key, value):
         return self._protocol.putkeep(key, value)
