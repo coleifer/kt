@@ -75,12 +75,10 @@ cdef class SocketPool(object):
         list free
         readonly int max_age, port
         readonly str host
-        readonly timeout
 
-    def __init__(self, host, port, timeout=None, max_age=60):
+    def __init__(self, host, port, max_age=60):
         self.host = host
         self.port = port
-        self.timeout = timeout
         self.max_age = max_age
         self.in_use = {}
         self.free = []
@@ -117,8 +115,6 @@ cdef class SocketPool(object):
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.connect((self.host, self.port))
-        if self.timeout:
-            conn.settimeout(self.timeout)
         return conn.makefile('rwb')
 
     cdef checkin(self):
@@ -370,14 +366,13 @@ cdef class BinaryProtocol(object):
     cdef:
         readonly str _host
         readonly int _port
-        readonly _timeout
         readonly decode_key
         readonly encode_value
         readonly decode_value
         readonly SocketPool _socket_pool
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
-                 encode_value=None, decode_value=None, timeout=None):
+                 encode_value=None, decode_value=None):
         self._host = host
         self._port = port
         if decode_keys:
@@ -386,8 +381,7 @@ cdef class BinaryProtocol(object):
             self.decode_key = noop_decode
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
-        self._timeout = timeout
-        self._socket_pool = SocketPool(self._host, self._port, self._timeout)
+        self._socket_pool = SocketPool(self._host, self._port)
 
     def __del__(self):
         self._socket_pool.close()
