@@ -92,7 +92,11 @@ cdef class SocketPool(object):
             long tid = get_ident()
 
         if tid in self.in_use:
-            return self.in_use[tid]
+            sock = self.in_use[tid]
+            if sock.closed:
+                del self.in_use[tid]
+            else:
+                return self.in_use[tid]
 
         while self.free:
             ts, sock = heapq.heappop(self.free)
@@ -119,7 +123,9 @@ cdef class SocketPool(object):
     cdef checkin(self):
         cdef long tid = get_ident()
         if tid in self.in_use:
-            heapq.heappush(self.free, (time.time(), self.in_use.pop(tid)))
+            sock = self.in_use.pop(tid)
+            if not sock.closed:
+                heapq.heappush(self.free, (time.time(), sock))
             return True
         return False
 
@@ -141,9 +147,12 @@ cdef class RequestBuffer(object):
         object value_encode
         public object buf
         _socket
+        SocketPool _socket_pool
 
-    def __init__(self, socket_file, key_encode=None, value_encode=None):
-        self._socket = socket_file
+    def __init__(self, SocketPool socket_pool, key_encode=None,
+                 value_encode=None):
+        self._socket_pool = socket_pool
+        self._socket = socket_pool.checkout()
         self.key_encode = key_encode
         self.value_encode = value_encode
         self.buf = io.BytesIO()
@@ -236,6 +245,7 @@ cdef class RequestBuffer(object):
     cdef send(self):
         self._socket.write(self.buf.getvalue())
         self._socket.flush()
+        self._socket_pool.checkin()
 
 
 cdef class BaseResponseHandler(object):
@@ -254,6 +264,7 @@ cdef class BaseResponseHandler(object):
         if n > 0:
             value = self._socket.read(n)
             if not value:
+                self._socket.close()
                 raise ServerConnectionError('server went away')
         return value
 
@@ -382,7 +393,7 @@ cdef class BinaryProtocol(object):
 
     cdef RequestBuffer request(self):
         return RequestBuffer(
-            self._socket_pool.checkout(),
+            self._socket_pool,
             encode,
             self.encode_value)
 
