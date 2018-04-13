@@ -7,25 +7,30 @@ Serializers
 -----------
 
 .. py:data:: KT_BINARY
+
     Default value serialization. Serializes values as UTF-8 byte-strings and
     deserializes to unicode.
 
 .. py:data:: KT_JSON
+
     Serialize values as JSON (encoded as UTF-8).
 
 .. py:data:: KT_MSGPACK
+
     Uses ``msgpack`` to serialize and deserialize values.
 
 .. py:data:: KT_NONE
+
     No serialization or deserialization. Values must be byte-strings.
 
 .. py:data:: KT_PICKLE
+
     Serialize and deserialize using Python's pickle module.
 
 Kyoto Tycoon client
 -------------------
 
-.. py:class: KyotoTycoon(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None, default_db=0)
+.. py:class:: KyotoTycoon(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None, default_db=0)
 
     :param str host: server host.
     :param int port: server port.
@@ -310,7 +315,7 @@ Kyoto Tycoon client
 Tokyo Tyrant client
 -------------------
 
-.. py:class: TokyoTyrant(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None)
+.. py:class:: TokyoTyrant(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None)
 
     :param str host: server host.
     :param int port: server port.
