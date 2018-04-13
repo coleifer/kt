@@ -507,3 +507,94 @@ Tokyo Tyrant client
 
         :return: list of all keys in database
         :rtype list:
+
+
+Embedded Servers
+----------------
+
+.. py:class:: EmbeddedServer(server='ktserver', host='127.0.0.1', port=None, database='*', server_args=None)
+
+    :param str server: path to ktserver executable
+    :param str host: host to bind server on
+    :param int port: port to use (optional)
+    :param str database: database filename, default is in-memory hash table
+    :param list server_args: additional command-line arguments for server
+
+    Create a manager for running an embedded (sub-process) Kyoto Tycoon server.
+    If the port is not specified, a random high port will be used.
+
+    Example:
+
+    .. code-block:: pycon
+
+        >>> from kt import EmbeddedServer
+        >>> server = EmbeddedServer()
+        >>> server.run()
+        True
+        >>> client = server.client
+        >>> client.set('k1', 'v1')
+        1
+        >>> client.get('k1')
+        'v1'
+        >>> server.stop()
+        True
+
+    .. py:method:: run()
+
+        :return: boolean indicating if server successfully started
+
+        Run ``ktserver`` in a sub-process.
+
+    .. py:method:: stop()
+
+        :return: boolean indicating if server was stopped
+
+        Stop the running embedded server.
+
+    .. py:attribute:: client
+
+        :py:class:`KyotoTycoon` client bound to the embedded server.
+
+
+.. py:class:: EmbeddedTokyoTyrantServer(server='ttserver', host='127.0.0.1', port=None, database='*', server_args=None)
+
+    :param str server: path to ttserver executable
+    :param str host: host to bind server on
+    :param int port: port to use (optional)
+    :param str database: database filename, default is in-memory hash table
+    :param list server_args: additional command-line arguments for server
+
+    Create a manager for running an embedded (sub-process) Tokyo Tyrant server.
+    If the port is not specified, a random high port will be used.
+
+    Example:
+
+    .. code-block:: pycon
+
+        >>> from kt import EmbeddedTokyoTyrantServer
+        >>> server = EmbeddedTokyoTyrantServer()
+        >>> server.run()
+        True
+        >>> client = server.client
+        >>> client.set('k1', 'v1')
+        True
+        >>> client.get('k1')
+        'v1'
+        >>> server.stop()
+        True
+
+    .. py:method:: run()
+
+        :return: boolean indicating if server successfully started
+
+        Run ``ttserver`` in a sub-process.
+
+    .. py:method:: stop()
+
+        :return: boolean indicating if server was stopped
+
+        Stop the running embedded server.
+
+    .. py:attribute:: client
+
+        :py:class:`TokyoTyrant` client bound to the embedded server.
