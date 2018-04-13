@@ -72,7 +72,7 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: dictionary of all key/value pairs that were found
-        :rtype dict:
+        :rtype: dict
 
     .. py:method:: set_bulk(__data=None, db=None, expire_time=None, **kwargs)
 
@@ -98,7 +98,7 @@ Kyoto Tycoon client
         :param bool encode_values: serialize values passed to lua function.
         :param kwargs: mapping of key/value pairs to pass to lua function, expressed as keyword arguments
         :return: dictionary of key/value pairs returned by function
-        :rtype dict:
+        :rtype: dict
 
         Execute a lua function. Kyoto Tycoon lua extensions accept arbitrary
         key/value pairs as input, and return a result dictionary. If
@@ -118,14 +118,14 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: status fields and values
-        :rtype dict:
+        :rtype: dict
 
         Obtain status information from the server about the selected database.
 
     .. py:method:: report()
 
         :return: status fields and values
-        :rtype dict:
+        :rtype: dict
 
         Obtain report on overall status of server, including all databases.
 
@@ -138,7 +138,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: boolean indicating if key could be added or not
-        :rtype bool:
+        :rtype: bool
 
         Add a key/value pair to the database. This operation will only succeed
         if the key does not already exist in the database.
@@ -152,7 +152,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: boolean indicating if key could be replaced or not
-        :rtype bool:
+        :rtype: bool
 
         Replace a key/value pair to the database. This operation will only
         succeed if the key alreadys exist in the database.
@@ -166,7 +166,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: boolean indicating if value was appended
-        :rtype bool:
+        :rtype: bool
 
         Appends data to an existing key/value pair. If the key does not exist,
         this is equivalent to :py:meth:`~KyotoTycoon.set`.
@@ -177,7 +177,7 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: boolean indicating if key exists
-        :rtype bool:
+        :rtype: bool
 
     .. py:method:: seize(key, db=None)
 
@@ -198,7 +198,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: boolean indicating if compare-and-swap succeeded.
-        :rtype bool:
+        :rtype: bool
 
         Compare-and-swap the value stored at a given key.
 
@@ -212,7 +212,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: new value at key
-        :rtype int:
+        :rtype: int
 
     .. py:method:: incr_double(key, n=1., orig=None, db=None, expire_time=None)
 
@@ -224,7 +224,7 @@ Kyoto Tycoon client
         :param expire_time: expiration time in seconds
         :type expire_time: int or None
         :return: new value at key
-        :rtype float:
+        :rtype: float
 
     .. py:method:: __getitem__(key_or_keydb)
 
@@ -251,7 +251,7 @@ Kyoto Tycoon client
     .. py:method:: __len__()
 
         :return: total number of keys in the default database.
-        :rtype int:
+        :rtype: int
 
     .. py:method:: update(__data=None, db=None, expire_time=None, **kwargs)
 
@@ -268,7 +268,7 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: list of keys that matched the given prefix.
-        :rtype list:
+        :rtype: list
 
     .. py:method:: match_regex(regex, max_keys=None, db=None)
 
@@ -277,7 +277,7 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: list of keys that matched the given regular expression.
-        :rtype list:
+        :rtype: list
 
     .. py:method:: match_similar(origin, distance=None, max_keys=None, db=None)
 
@@ -287,14 +287,14 @@ Kyoto Tycoon client
         :param db: database index
         :type db: int or None
         :return: list of keys that were within a certain edit-distance of origin
-        :rtype list:
+        :rtype: list
 
     .. py:method:: keys(db=None)
 
         :param db: database index
         :type db: int or None
         :return: list of all keys in database
-        :rtype list:
+        :rtype: list
 
     .. py:attribute:: size
 
@@ -347,7 +347,7 @@ Tokyo Tyrant client
 
         :param list keys: list of keys to look-up
         :return: dictionary of all key/value pairs that were found
-        :rtype dict:
+        :rtype: dict
 
     .. py:method:: set_bulk(__data=None, **kwargs)
 
@@ -366,7 +366,7 @@ Tokyo Tyrant client
         :param str key: key to pass to lua function (optional)
         :param str value: value to pass to lua function (optional)
         :return: byte-string returned by function
-        :rtype bytes:
+        :rtype: bytes
 
         Execute a lua function. Tokyo Tyrant lua extensions accept two
         parameters, a key and a value, and return a result byte-string.
@@ -380,7 +380,7 @@ Tokyo Tyrant client
     .. py:method:: status()
 
         :return: status fields and values
-        :rtype dict:
+        :rtype: dict
 
         Obtain status information from the server.
 
@@ -389,7 +389,7 @@ Tokyo Tyrant client
         :param str key: key to add
         :param value: value to store (will be serialized using serializer)
         :return: boolean indicating if key could be added or not
-        :rtype bool:
+        :rtype: bool
 
         Add a key/value pair to the database. This operation will only succeed
         if the key does not already exist in the database.
@@ -399,7 +399,7 @@ Tokyo Tyrant client
         :param str key: key to append value to
         :param value: data to append (will be serialized using serializer)
         :return: boolean indicating if value was appended
-        :rtype bool:
+        :rtype: bool
 
         Appends data to an existing key/value pair. If the key does not exist,
         this is equivalent to :py:meth:`~TokyoTyrant.set`.
@@ -416,21 +416,21 @@ Tokyo Tyrant client
 
         :param str key: key to test
         :return: boolean indicating if key exists
-        :rtype bool:
+        :rtype: bool
 
     .. py:method:: incr(key, n=1)
 
         :param str key: key to increment
         :param int n: value to add
         :return: new value at key
-        :rtype int:
+        :rtype: int
 
     .. py:method:: incr_double(key, n=1.)
 
         :param str key: key to increment
         :param float n: value to add
         :return: new value at key
-        :rtype float:
+        :rtype: float
 
     .. py:method:: misc(cmd, keys=None, data=None)
 
@@ -464,7 +464,7 @@ Tokyo Tyrant client
     .. py:method:: __len__()
 
         :return: total number of keys in the database.
-        :rtype int:
+        :rtype: int
 
     .. py:method:: update(__data=None, db=None, expire_time=None, **kwargs)
 
@@ -484,7 +484,7 @@ Tokyo Tyrant client
         :param str stop: stop-key for range (optional)
         :param int max_keys: maximum keys to fetch
         :return: a mapping of key-value pairs falling within the given range.
-        :rtype dict:
+        :rtype: dict
 
         .. note:: Only works with tree databases.
 
@@ -493,25 +493,25 @@ Tokyo Tyrant client
         :param str prefix: key prefix to match
         :param int max_keys: maximum number of results to return
         :return: list of keys that matched the given prefix.
-        :rtype list:
+        :rtype: list
 
     .. py:method:: match_regex(regex, max_keys=1024)
 
         :param str regex: regular-expression to match
         :param int max_keys: maximum number of results to return
         :return: list of keys that matched the given regular expression.
-        :rtype list:
+        :rtype: list
 
     .. py:method:: iter_from(start_key)
 
         :param start_key: key to start iteration.
         :return: list of key/value pairs obtained by iterating from start-key.
-        :rtype dict:
+        :rtype: dict
 
     .. py:method:: keys()
 
         :return: list of all keys in database
-        :rtype list:
+        :rtype: list
 
 
 Embedded Servers
