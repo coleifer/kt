@@ -98,9 +98,9 @@ UTF-8 byte-strings and decoded to unicode upon retrieval. You can set the
 ``serializer`` parameter when creating your client to use a different value
 serialization. *kt* provides the following:
 
-* ``KT_BINARY`` - default, treat values unicode and serialize as UTF-8.
+* ``KT_BINARY`` - **default**, treat values as unicode and serialize as UTF-8.
 * ``KT_JSON`` - use JSON to serialize values.
-* ``KT_MSGPACK`` - use msgpack to serialize values (fast!).
+* ``KT_MSGPACK`` - use msgpack to serialize values.
 * ``KT_PICKLE`` - use pickle to serialize values.
 * ``KT_NONE`` - no serialization, values must be bytestrings.
 
