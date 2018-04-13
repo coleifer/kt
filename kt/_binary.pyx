@@ -97,7 +97,10 @@ cdef class SocketPool(object):
         while self.free:
             ts, sock = heapq.heappop(self.free)
             if ts < now - self.max_age:
-                sock.close()
+                try:
+                    sock.close()
+                except OSError:
+                    pass
             else:
                 self.in_use[tid] = sock
                 return sock
@@ -246,23 +249,28 @@ cdef class BaseResponseHandler(object):
         self.key_decode = key_decode
         self.value_decode = value_decode
 
+    cdef bytes read(self, int n):
+        cdef bytes value = b''
+        if n > 0:
+            value = self._socket.read(n)
+            if not value:
+                raise ServerConnectionError('server went away')
+        return value
+
     cdef int read_int(self):
-        return s_unpack('!I', self._socket.read(4))[0]
+        return s_unpack('!I', self.read(4))[0]
 
     cdef int read_long(self):
-        return s_unpack('!q', self._socket.read(8))[0]
+        return s_unpack('!q', self.read(8))[0]
 
     cdef double read_double(self):
         cdef:
             long i, m
-        i, m = s_unpack('>QQ', self._socket.read(16))
+        i, m = s_unpack('>QQ', self.read(16))
         return i + (m * 1e-12)
 
     cdef bytes read_bytes(self):
-        return self._socket.read(self.read_int())
-
-    cdef bytes read(self, int n):
-        return self._socket.read(n)
+        return self.read(self.read_int())
 
     cdef read_key(self):
         return self.key_decode(self.read_bytes())
@@ -282,9 +290,9 @@ cdef class BaseResponseHandler(object):
     cdef tuple read_key_value(self):
         cdef:
             int klen, vlen
-        klen, vlen = s_unpack('!II', self._socket.read(8))
-        return (self.key_decode(self._socket.read(klen)),
-                self.value_decode(self._socket.read(vlen)))
+        klen, vlen = s_unpack('!II', self.read(8))
+        return (self.key_decode(self.read(klen)),
+                self.value_decode(self.read(vlen)))
 
     cdef dict read_keys_values(self):
         cdef:
@@ -301,9 +309,9 @@ cdef class BaseResponseHandler(object):
         cdef:
             int klen, vlen
 
-        _, klen, vlen, _ = s_unpack('!HIIq', self._socket.read(18))
-        return (self.key_decode(self._socket.read(klen)),
-                self.value_decode(self._socket.read(vlen)))
+        _, klen, vlen, _ = s_unpack('!HIIq', self.read(18))
+        return (self.key_decode(self.read(klen)),
+                self.value_decode(self.read(vlen)))
 
     cdef dict read_keys_values_with_db_expire(self):
         cdef:
@@ -323,10 +331,7 @@ cdef class KTResponseHandler(BaseResponseHandler):
             bytes bmagic
             int imagic
 
-        bmagic = self._socket.read(1)
-        if not bmagic:
-            raise ServerConnectionError('Server went away')
-
+        bmagic = self.read(1)
         if bmagic == magic:
             return 0
         elif bmagic == KT_ERROR:
@@ -341,10 +346,7 @@ cdef class TTResponseHandler(BaseResponseHandler):
             bytes bmagic
             int imagic
 
-        bmagic = self._socket.read(1)
-        if not bmagic:
-            raise ServerConnectionError('Server went away')
-
+        bmagic = self.read(1)
         imagic = ord(bmagic)
         if imagic == 0 or imagic == 1:
             return imagic
