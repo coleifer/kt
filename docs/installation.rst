@@ -27,7 +27,7 @@ Installing with git
 
 To install the latest version with git:
 
-.. code-block: bash
+.. code-block:: bash
 
     $ git clone https://github.com/coleifer/kt
     $ cd kt/
