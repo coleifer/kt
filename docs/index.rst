@@ -6,9 +6,16 @@
 kt
 ==
 
+.. image:: logo.png
+
 *kt* is a fast client library for use with `Kyoto Tycoon <http://fallabs.com/kyototycoon/>`_
 and `Tokyo Tyrant <http://fallabs.com/tokyotyrant/>`_. *kt* is designed to be
 performant and simple-to-use.
+
+* Binary protocols implemented as C extension.
+* Thread-safe and greenlet-safe.
+* Simple APIs.
+* Full-featured implementation of protocol.
 
 .. toctree::
    :maxdepth: 2
