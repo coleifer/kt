@@ -8,6 +8,7 @@ import io
 import math
 import socket
 import struct
+import threading
 try:
     from threading import get_ident
 except ImportError:
@@ -69,73 +70,121 @@ def noop_decode(obj):
     return obj
 
 
+cdef class _Socket(object):
+    cdef:
+        readonly bint is_closed
+        _socket
+
+    def __init__(self, s):
+        self._socket = s
+        self.is_closed = False
+
+    def __del__(self):
+        if not self.is_closed:
+            self._socket.close()
+
+    def recv(self, int n):
+        cdef:
+            bytes data
+            bytes result = b''
+            int l = 0
+
+        while n:
+            data = self._socket.recv(n)
+            l = len(data)
+            if not l:
+                self.close()
+                raise ServerConnectionError('server went away')
+            n -= l
+            result += data
+        return result
+
+    def send(self, bytes data):
+        try:
+            self._socket.sendall(data)
+        except IOError:
+            self.close()
+            raise ServerConnectionError('server went away')
+
+    def close(self):
+        if self.is_closed:
+            return False
+
+        self._socket.close()
+        self.is_closed = True
+        return True
+
+
 cdef class SocketPool(object):
     cdef:
         dict in_use
         list free
-        readonly int max_age, port
+        readonly bint nodelay
+        readonly int port
         readonly str host
+        readonly timeout
+        mutex
 
-    def __init__(self, host, port, max_age=60):
+    def __init__(self, host, port, timeout=None, nodelay=False):
         self.host = host
         self.port = port
-        self.max_age = max_age
+        self.timeout = timeout
+        self.nodelay = nodelay
         self.in_use = {}
         self.free = []
+        self.mutex = threading.Lock()
 
-    cdef checkout(self):
+    def checkout(self):
         cdef:
             float now = time.time()
             float ts
             long tid = get_ident()
+            _Socket s
+
+        with self.mutex:
+            if tid in self.in_use:
+                s = self.in_use[tid]
+                if s.is_closed:
+                    del self.in_use[tid]
+                else:
+                    return s
+
+            while self.free:
+                ts, s = heapq.heappop(self.free)
+                self.in_use[tid] = s
+                return s
+
+            s = self.create_socket()
+            self.in_use[tid] = s
+            return s
+
+    def checkin(self):
+        cdef:
+            long tid = get_ident()
+            _Socket s
 
         if tid in self.in_use:
-            sock = self.in_use[tid]
-            if sock.closed:
-                del self.in_use[tid]
-            else:
-                return self.in_use[tid]
+            s = self.in_use.pop(tid)
+            if not s.is_closed:
+                heapq.heappush(self.free, (time.time(), s))
 
-        while self.free:
-            ts, sock = heapq.heappop(self.free)
-            if ts < now - self.max_age:
-                try:
-                    sock.close()
-                except OSError:
-                    pass
-            else:
-                self.in_use[tid] = sock
-                return sock
+    def close(self):
+        cdef:
+            long tid = get_ident()
+            _Socket s
 
-        sock = self.create_socket_file()
-        self.in_use[tid] = sock
-        return sock
+        s = self.in_use.pop(tid, None)
+        if s and not s.is_closed:
+            s.close()
 
-    cdef create_socket_file(self):
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        conn.connect((self.host, self.port))
-        return conn.makefile('rwb')
-
-    cdef checkin(self):
-        cdef long tid = get_ident()
-        if tid in self.in_use:
-            sock = self.in_use.pop(tid)
-            if not sock.closed:
-                heapq.heappush(self.free, (time.time(), sock))
-            return True
-        return False
-
-    cdef close(self):
-        cdef long tid = get_ident()
-        sock = self.in_use.pop(tid, None)
-        if sock:
-            try:
-                sock.close()
-            except OSError:
-                pass
-            return True
-        return False
+    cdef _Socket create_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if self.nodelay:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.connect((self.host, self.port))
+        if self.timeout:
+            sock.settimeout(self.timeout)
+        return _Socket(sock)
 
 
 cdef class RequestBuffer(object):
@@ -240,8 +289,7 @@ cdef class RequestBuffer(object):
                 .write_bytes(bval, False))
 
     cdef send(self):
-        self._socket.write(self.buf.getvalue())
-        self._socket.flush()
+        self._socket.send(self.buf.getvalue())
         self._socket_pool.checkin()
 
 
@@ -251,18 +299,15 @@ cdef class BaseResponseHandler(object):
         object value_decode
         public object _socket
 
-    def __init__(self, socket_file, key_decode, value_decode):
-        self._socket = socket_file
+    def __init__(self, sock, key_decode, value_decode):
+        self._socket = sock
         self.key_decode = key_decode
         self.value_decode = value_decode
 
     cdef bytes read(self, int n):
         cdef bytes value = b''
         if n > 0:
-            value = self._socket.read(n)
-            if not value:
-                self._socket.close()
-                raise ServerConnectionError('server went away')
+            value = self._socket.recv(n)
         return value
 
     cdef int read_int(self):
@@ -372,7 +417,7 @@ cdef class BinaryProtocol(object):
         readonly SocketPool _socket_pool
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
-                 encode_value=None, decode_value=None):
+                 encode_value=None, decode_value=None, timeout=None):
         self._host = host
         self._port = port
         if decode_keys:
@@ -381,7 +426,8 @@ cdef class BinaryProtocol(object):
             self.decode_key = noop_decode
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
-        self._socket_pool = SocketPool(self._host, self._port)
+        self._socket_pool = SocketPool(self._host, self._port, timeout,
+                                       nodelay=True)
 
     def __del__(self):
         self._socket_pool.close()

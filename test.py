@@ -3,6 +3,7 @@ from kt import EmbeddedServer, KyotoTycoon
 
 kt = KyotoTycoon()
 
+kt.clear()
 kt.set('foo', 'bar')
 assert kt.get('foo') == 'bar'
 
