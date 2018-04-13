@@ -115,6 +115,7 @@ cdef class SocketPool(object):
 
     cdef create_socket_file(self):
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.connect((self.host, self.port))
         if self.timeout:
             conn.settimeout(self.timeout)
