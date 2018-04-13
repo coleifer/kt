@@ -1,8 +1,14 @@
-### kt
+![](http://media.charlesleifer.com/blog/photos/logo.png)
 
 Fast bindings to kyototycoon and tokyotyrant.
 
-[documentation hosted at readthedocs](http://kt-lib.readthedocs.io/en/latest/)
+* Binary APIs implemented as C extension.
+* Thread-safe and greenlet-safe.
+* Simple APIs.
+* Full-featured implementation of protocol.
+
+View the [documentation](http://kt-lib.readthedocs.io/en/latest/) for more
+info.
 
 #### installing
 
