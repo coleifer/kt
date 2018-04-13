@@ -151,7 +151,7 @@ class EmbeddedServer(object):
         raise KyotoTycoonError('Could not find open port')
 
 
-class EmbeddedTokyoTyrantServer(object):
+class EmbeddedTokyoTyrantServer(EmbeddedServer):
     def __init__(self, server='ttserver', host='127.0.0.1', port=None,
                  database='*', server_args=None):
         super(EmbeddedTokyoTyrantServer, self).__init__(server, host, port,

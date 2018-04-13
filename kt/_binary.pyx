@@ -541,7 +541,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_magic(b'\xc8\x20')
          .write_key(key)
          .send())
-        return self.response().check_error()
+        return 0 if self.response().check_error() else 1
 
     def get(self, key):
         cdef:
