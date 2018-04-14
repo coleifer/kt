@@ -218,17 +218,25 @@ class KyotoTycoon(BaseClient):
     def __len__(self):
         return int(self.status(self._default_db)['count'])
 
+    def count(self, db=None):
+        db = self._default_db if db is None else db
+        return int(self.status(db)['count'])
+
     def match_prefix(self, prefix, max_keys=None, db=None):
+        db = self._default_db if db is None else db
         return self._protocol_http.match_prefix(prefix, max_keys, db)
 
     def match_regex(self, regex, max_keys=None, db=None):
+        db = self._default_db if db is None else db
         return self._protocol_http.match_regex(regex, max_keys, db)
 
     def match_similar(self, origin, distance=None, max_keys=None, db=None):
+        db = self._default_db if db is None else db
         return self._protocol_http.match_similar(origin, distance, max_keys,
                                                  db)
 
     def keys(self, db=None):
+        db = self._default_db if db is None else db
         return self.match_prefix('', db=db)
 
     @property

@@ -88,8 +88,6 @@ class HttpProtocol(object):
         return ''.join((self._prefix, url))
 
     def _post(self, path, body, db):
-        if db is not False:
-            path += '?DB=%s' % db
         return self._session.post(self.path(path), data=body)
 
     def request(self, path, data, db=None, allowed_status=None):
@@ -100,6 +98,13 @@ class HttpProtocol(object):
         else:
             body = data
 
+        if db is not False:
+            db_data = self._encode_keys_values({'DB': db or 0})
+            if body:
+                body = b'\n'.join((body, db_data))
+            else:
+                body = db_data
+
         r = self._post(path, body, db)
         if r.status_code != 200:
             if allowed_status is None or r.status_code not in allowed_status:
@@ -109,7 +114,7 @@ class HttpProtocol(object):
                 r.status_code)
 
     def status(self, db=None):
-        resp, status = self.request('/status', {'DB': db or 0})
+        resp, status = self.request('/status', {})
         return resp
 
     def report(self):
