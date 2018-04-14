@@ -432,6 +432,9 @@ cdef class BinaryProtocol(object):
     def __del__(self):
         self._socket_pool.close()
 
+    def close(self):
+        self._socket_pool.close()
+
     cdef RequestBuffer request(self):
         return RequestBuffer(
             self._socket_pool,

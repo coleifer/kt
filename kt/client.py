@@ -75,6 +75,9 @@ class BaseClient(object):
             self._script_runner = ScriptRunner(self)
         return self._script_runner
 
+    def close(self):
+        return self._protocol.close()
+
 
 class ScriptRunner(object):
     def __init__(self, client):
