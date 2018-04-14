@@ -10,8 +10,12 @@ k1.clear()
 
 k0.set('k1', 'v1-0')
 k0.set('k2', 'v2-0')
+assert len(k0) == 2
+assert len(k1) == 0
 k1.set('k1', 'v1-1')
 k1.set('k2', 'v2-1')
+assert len(k0) == 2
+assert len(k1) == 2
 
 assert k0.get('k1') == 'v1-0'
 k0.remove('k1')
