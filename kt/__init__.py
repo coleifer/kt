@@ -1,4 +1,4 @@
-__version__ = '0.7.5'
+__version__ = '0.8.0'
 
 from .client import KT_BINARY
 from .client import KT_JSON
