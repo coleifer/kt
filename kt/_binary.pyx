@@ -83,7 +83,7 @@ cdef class _Socket(object):
         if not self.is_closed:
             self._socket.close()
 
-    def recv(self, int n):
+    cdef recv(self, int n):
         cdef:
             bytes data
             bytes result = b''
@@ -99,14 +99,14 @@ cdef class _Socket(object):
             result += data
         return result
 
-    def send(self, bytes data):
+    cdef send(self, bytes data):
         try:
             self._socket.sendall(data)
         except IOError:
             self.close()
             raise ServerConnectionError('server went away')
 
-    def close(self):
+    cdef bint close(self):
         if self.is_closed:
             return False
 
@@ -134,7 +134,7 @@ cdef class SocketPool(object):
         self.free = []
         self.mutex = threading.Lock()
 
-    def checkout(self):
+    cdef _Socket checkout(self):
         cdef:
             float now = time.time()
             float ts
@@ -158,7 +158,7 @@ cdef class SocketPool(object):
             self.in_use[tid] = s
             return s
 
-    def checkin(self):
+    cdef checkin(self):
         cdef:
             long tid = get_ident()
             _Socket s
@@ -168,7 +168,7 @@ cdef class SocketPool(object):
             if not s.is_closed:
                 heapq.heappush(self.free, (time.time(), s))
 
-    def close(self):
+    cdef close(self):
         cdef:
             long tid = get_ident()
             _Socket s
@@ -192,7 +192,7 @@ cdef class RequestBuffer(object):
         object key_encode
         object value_encode
         public object buf
-        _socket
+        _Socket _socket
         SocketPool _socket_pool
 
     def __init__(self, SocketPool socket_pool, key_encode=None,
@@ -297,7 +297,7 @@ cdef class BaseResponseHandler(object):
     cdef:
         object key_decode
         object value_decode
-        public object _socket
+        public _Socket _socket
 
     def __init__(self, sock, key_decode, value_decode):
         self._socket = sock
