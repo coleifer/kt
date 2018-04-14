@@ -83,7 +83,7 @@ cdef class _Socket(object):
         if not self.is_closed:
             self._socket.close()
 
-    def recv(self, int n):
+    cdef recv(self, int n):
         cdef:
             bytes data
             bytes result = b''
@@ -99,14 +99,14 @@ cdef class _Socket(object):
             result += data
         return result
 
-    def send(self, bytes data):
+    cdef send(self, bytes data):
         try:
             self._socket.sendall(data)
         except IOError:
             self.close()
             raise ServerConnectionError('server went away')
 
-    def close(self):
+    cdef bint close(self):
         if self.is_closed:
             return False
 
@@ -134,7 +134,7 @@ cdef class SocketPool(object):
         self.free = []
         self.mutex = threading.Lock()
 
-    def checkout(self):
+    cdef _Socket checkout(self):
         cdef:
             float now = time.time()
             float ts
@@ -158,7 +158,7 @@ cdef class SocketPool(object):
             self.in_use[tid] = s
             return s
 
-    def checkin(self):
+    cdef checkin(self):
         cdef:
             long tid = get_ident()
             _Socket s
@@ -168,7 +168,7 @@ cdef class SocketPool(object):
             if not s.is_closed:
                 heapq.heappush(self.free, (time.time(), s))
 
-    def close(self):
+    cdef close(self):
         cdef:
             long tid = get_ident()
             _Socket s
@@ -192,7 +192,7 @@ cdef class RequestBuffer(object):
         object key_encode
         object value_encode
         public object buf
-        _socket
+        _Socket _socket
         SocketPool _socket_pool
 
     def __init__(self, SocketPool socket_pool, key_encode=None,
@@ -297,12 +297,23 @@ cdef class BaseResponseHandler(object):
     cdef:
         object key_decode
         object value_decode
-        public object _socket
+        _Socket _socket
+        SocketPool _socket_pool
 
-    def __init__(self, sock, key_decode, value_decode):
-        self._socket = sock
+    def __init__(self, socket_pool, key_decode, value_decode):
+        self._socket_pool = socket_pool
+        self._socket = None
         self.key_decode = key_decode
         self.value_decode = value_decode
+
+    def __enter__(self):
+        if self._socket is None:
+            self._socket = self._socket_pool.checkout()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._socket_pool.checkin()
+        self._socket = None
 
     cdef bytes read(self, int n):
         cdef bytes value = b''
@@ -445,7 +456,7 @@ cdef class BinaryProtocol(object):
 cdef class KTBinaryProtocol(BinaryProtocol):
     cdef KTResponseHandler response(self):
         return KTResponseHandler(
-            self._socket_pool.checkout(),
+            self._socket_pool,
             self.decode_key,
             self.decode_value)
 
@@ -463,9 +474,9 @@ cdef class KTBinaryProtocol(BinaryProtocol):
          .write_key_list_with_db(keys, db)
          .send())
 
-        response = self.response()
-        response.check_error(KT_GET_BULK)
-        return response.read_keys_values_with_db_expire()
+        with self.response() as response:
+            response.check_error(KT_GET_BULK)
+            return response.read_keys_values_with_db_expire()
 
     def get(self, key, db):
         cdef bytes bkey = encode(key)
@@ -483,9 +494,9 @@ cdef class KTBinaryProtocol(BinaryProtocol):
          .write_keys_values_with_db_expire(data, db, expire_time or EXPIRE)
          .send())
 
-        response = self.response()
-        response.check_error(KT_SET_BULK)
-        return response.read_int()
+        with self.response() as response:
+            response.check_error(KT_SET_BULK)
+            return response.read_int()
 
     def set(self, key, value, db, expire_time):
         return self.set_bulk({key: value}, db, expire_time)
@@ -504,9 +515,9 @@ cdef class KTBinaryProtocol(BinaryProtocol):
          .write_key_list_with_db(keys, db)
          .send())
 
-        response = self.response()
-        response.check_error(KT_REMOVE_BULK)
-        return response.read_int()
+        with self.response() as response:
+            response.check_error(KT_REMOVE_BULK)
+            return response.read_int()
 
     def remove(self, key, db):
         return self.remove_bulk((key,), db)
@@ -537,34 +548,36 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
         request.send()
 
-        response = self.response()
-        response.check_error(KT_PLAY_SCRIPT)
+        with self.response() as response:
+            response.check_error(KT_PLAY_SCRIPT)
 
-        if encode_values:
-            return response.read_keys_values()
-        else:
-            # Handle reading "raw" with noop-decoder.
-            response = KTResponseHandler(self._socket, self.decode_key,
-                                         noop_decode)
-            return response.read_keys_values()
+            if encode_values:
+                return response.read_keys_values()
+            else:
+                # Handle reading "raw" with noop-decoder.
+                response = KTResponseHandler(self._socket, self.decode_key,
+                                             noop_decode)
+                return response.read_keys_values()
 
 
 cdef class TTBinaryProtocol(BinaryProtocol):
     cdef TTResponseHandler response(self):
         return TTResponseHandler(
-            self._socket_pool.checkout(),
+            self._socket_pool,
             self.decode_key,
             self.decode_value)
 
     cdef _key_value_cmd(self, key, value, bytes bmagic):
         cdef:
             RequestBuffer request = self.request()
+            TTResponseHandler response
 
         (request
          .write_magic(bmagic)
          .write_key_value(key, value)
          .send())
-        return self.response().check_error()
+        with self.response() as response:
+            return response.check_error()
 
     def put(self, key, value):
         return self._key_value_cmd(key, value, b'\xc8\x10') == 0
@@ -580,6 +593,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             bytes bkey = _encode(key)
             bytes bval = self.encode_value(value)
             RequestBuffer request = self.request()
+            TTResponseHandler response
 
         (request
          .write_magic(b'\xc8\x13')
@@ -588,17 +602,20 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_bytes(bval, False)
          .send())
 
-        return self.response().check_error() == 0
+        with self.response() as response:
+            return response.check_error() == 0
 
     def out(self, key):
         cdef:
             RequestBuffer request = self.request()
+            TTResponseHandler response
 
         (request
          .write_magic(b'\xc8\x20')
          .write_key(key)
          .send())
-        return 0 if self.response().check_error() else 1
+        with self.response() as response:
+            return 0 if response.check_error() else 1
 
     def get(self, key):
         cdef:
@@ -610,9 +627,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_key(key)
          .send())
 
-        response = self.response()
-        if not response.check_error():
-            return response.read_value()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_value()
 
     def get_bulk(self, keys):
         cdef:
@@ -624,9 +641,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_key_list(keys)
          .send())
 
-        response = self.response()
-        if not response.check_error():
-            return response.read_keys_values()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_keys_values()
 
     def vsiz(self, key):
         cdef:
@@ -637,9 +654,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_magic(b'\xc8\x38')
          .write_key(key)
          .send())
-        response = self.response()
-        if not response.check_error():
-            return response.read_int()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_int()
 
     def addint(self, key, value):
         cdef:
@@ -652,9 +669,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_ints((len(bkey), value))
          .write_bytes(bkey, False)
          .send())
-        response = self.response()
-        if not response.check_error():
-            return response.read_int()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_int()
 
     def adddouble(self, key, value):
         cdef:
@@ -669,9 +686,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_bytes(bkey, False)
          .send())
 
-        response = self.response()
-        if not response.check_error():
-            return response.read_double()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_double()
 
     def script(self, name, key=None, value=None):
         cdef:
@@ -689,23 +706,24 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_bytes(bval, False)
          .send())
 
-        response = self.response()
-        if response.check_error():
-            return response.read_bytes()
+        with self.response() as response:
+            if response.check_error():
+                return response.read_bytes()
 
     def keys(self):
         cdef TTResponseHandler response
 
         self.request().write_magic(b'\xc8\x50').send()
-        if self.response().check_error():
-            return []
+        with self.response() as response:
+            if response.check_error():
+                return []
 
         while True:
             self.request().write_magic(b'\xc8\x51').send()
-            response = self.response()
-            if response.check_error():
-                raise StopIteration
-            yield response.read_key()
+            with self.response() as response:
+                if response.check_error():
+                    raise StopIteration
+                yield response.read_key()
 
     def match_prefix(self, prefix, max_keys=1024):
         cdef:
@@ -719,9 +737,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_bytes(bprefix, False)
          .send())
 
-        response = self.response()
-        if not response.check_error():
-            return response.read_keys()
+        with self.response() as response:
+            if not response.check_error():
+                return response.read_keys()
 
     def misc(self, name, keys=None, data=None):
         cdef:
@@ -774,31 +792,34 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         request.send()
 
-        response = self.response()
-        rv = response.check_error()  # 1 if simple error, 0 if OK.
-        nelem = response.read_int()
+        with self.response() as response:
+            rv = response.check_error()  # 1 if simple error, 0 if OK.
+            nelem = response.read_int()
 
-        if nelem == 0 and bname != b'getlist':
-            return rv == 0
-        elif nelem == 1:
-            return response.read_value()
-        else:
-            accum = {}
-            for _ in range(nelem // 2):
-                key = response.read_key()
-                value = response.read_value()
-                accum[key] = value
-            return accum
+            if nelem == 0 and bname != b'getlist':
+                return rv == 0
+            elif nelem == 1:
+                return response.read_value()
+            else:
+                accum = {}
+                for _ in range(nelem // 2):
+                    key = response.read_key()
+                    value = response.read_value()
+                    accum[key] = value
+                return accum
 
     def vanish(self):
+        cdef TTResponseHandler response
         self.request().write_magic(b'\xc8\x72').send()
-        return self.response().check_error() == 0
+        with self.response() as response:
+            return response.check_error() == 0
 
     def _long_cmd(self, bytes bmagic):
+        cdef TTResponseHandler response
         self.request().write_magic(bmagic).send()
-        response = self.response()
-        response.check_error()
-        return response.read_long()
+        with self.response() as response:
+            response.check_error()
+            return response.read_long()
 
     def rnum(self):
         return self._long_cmd(b'\xc8\x80')
@@ -807,7 +828,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return self._long_cmd(b'\xc8\x81')
 
     def stat(self):
+        cdef TTResponseHandler response
         self.request().write_magic(b'\xc8\x88').send()
-        response = self.response()
-        response.check_error()
-        return response.read_bytes()
+        with self.response() as response:
+            response.check_error()
+            return response.read_bytes()
