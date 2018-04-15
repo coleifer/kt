@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from functools import partial
 import json
 import re
@@ -75,8 +76,17 @@ class BaseClient(object):
             self._script_runner = ScriptRunner(self)
         return self._script_runner
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._protocol.checkin()
+
+    def checkin(self):
+        self._protocol.checkin()
+
     def close(self):
-        return self._protocol.close()
+        self._protocol.close()
 
 
 class ScriptRunner(object):
@@ -108,6 +118,10 @@ class KyotoTycoon(BaseClient):
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
             decode_value=self._decode_value)
+
+    def close(self):
+        self._protocol.close()
+        self._protocol_http.close()
 
     def get(self, key, db=None):
         db = self._default_db if db is None else db

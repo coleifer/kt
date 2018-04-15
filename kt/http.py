@@ -54,6 +54,9 @@ class HttpProtocol(object):
         self._session = requests.Session()
         self._session.headers['Content-Type'] = self._content_type
 
+    def close(self):
+        self._session.close()
+
     def _encode_keys_values(self, data):
         accum = []
         for key, value in data.items():

@@ -42,6 +42,14 @@ Kyoto Tycoon client
 
     Client for interacting with Kyoto Tycoon database.
 
+    .. py:method:: checkin()
+
+        Return the communication socket to the pool for re-use.
+
+    .. py:method:: close()
+
+        Close the connection to the server.
+
     .. py:method:: get(key, db=None)
 
         :param str key: key to look-up
@@ -326,6 +334,14 @@ Tokyo Tyrant client
     :param int default_db: default database to operate on.
 
     Client for interacting with Tokyo Tyrant database.
+
+    .. py:method:: checkin()
+
+        Return the communication socket to the pool for re-use.
+
+    .. py:method:: close()
+
+        Close the connection to the server.
 
     .. py:method:: get(key)
 
