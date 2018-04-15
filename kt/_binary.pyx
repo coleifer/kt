@@ -193,12 +193,10 @@ cdef class RequestBuffer(object):
         object value_encode
         public object buf
         _Socket _socket
-        SocketPool _socket_pool
 
-    def __init__(self, SocketPool socket_pool, key_encode=None,
+    def __init__(self, _Socket socket, key_encode=None,
                  value_encode=None):
-        self._socket_pool = socket_pool
-        self._socket = socket_pool.checkout()
+        self._socket = socket
         self.key_encode = key_encode
         self.value_encode = value_encode
         self.buf = io.BytesIO()
@@ -290,7 +288,6 @@ cdef class RequestBuffer(object):
 
     cdef send(self):
         self._socket.send(self.buf.getvalue())
-        self._socket_pool.checkin()
 
 
 cdef class BaseResponseHandler(object):
@@ -331,7 +328,7 @@ cdef class BaseResponseHandler(object):
     cdef read_value(self):
         return self.value_decode(self.read_bytes())
 
-    cdef read_keys(self):
+    cdef list read_keys(self):
         cdef:
             int n = self.read_int()
             list accum = []
@@ -432,12 +429,15 @@ cdef class BinaryProtocol(object):
     def __del__(self):
         self._socket_pool.close()
 
+    def checkin(self):
+        self._socket_pool.checkin()
+
     def close(self):
         self._socket_pool.close()
 
     cdef RequestBuffer request(self):
         return RequestBuffer(
-            self._socket_pool,
+            self._socket_pool.checkout(),
             encode,
             self.encode_value)
 
