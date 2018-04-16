@@ -690,7 +690,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .send())
 
         response = self.response()
-        if response.check_error():
+        if not response.check_error():
             return response.read_bytes()
 
     def keys(self):
