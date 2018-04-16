@@ -423,3 +423,61 @@ function sdiff(inmap, outmap)
   end
   return svv(inmap, outmap, fn)
 end
+
+
+-- Misc helpers.
+
+
+-- Move src to dest.
+-- accepts: { src, dest }
+-- returns: {}
+function move(inmap, outmap)
+  local src = inmap.src
+  local dest = inmap.dest
+  if not src or not dest then
+    return kt.RVEINVALID
+  end
+  local keys = { src, dest }
+  local first = true
+  local src_val = nil
+  local src_xt = nil
+  local function visit(key, value, xt)
+    -- Operating on first key, capture value and xt and remove.
+    if first then
+      src_val = value
+      src_xt = xt
+      first = false
+      return kt.Visitor.REMOVE
+    end
+
+    -- Operating on dest key, store value and xt.
+    if src_val then
+      return src_val, src_xt
+    end
+    return kt.Visitor.NOP
+  end
+
+  if not db:accept_bulk(keys, visit) then
+    return kt.REINTERNAL
+  end
+
+  if not src_val then
+    return kt.RVELOGIC
+  end
+  return kt.RVSUCCESS
+end
+
+
+-- List all key-value pairs.
+-- accepts: {}
+-- returns: { k=v ... }
+function list(inmap, outmap)
+  local cur = db:cursor()
+  cur:jump()
+  while true do
+    local key, value, xt = cur:get(true)
+    if not key then break end
+    outmap[key] = value
+  end
+  return kt.RVSUCCESS
+end
