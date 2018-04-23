@@ -253,6 +253,9 @@ class KyotoTycoon(BaseClient):
         db = self._default_db if db is None else db
         return self.match_prefix('', db=db)
 
+    def __iter__(self):
+        return iter(self.keys())
+
     @property
     def size(self):
         return int(self.status(self._default_db)['size'])
