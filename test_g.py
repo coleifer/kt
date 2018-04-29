@@ -29,6 +29,6 @@ for g in greenlets:
     g.join()
 
 kt.clear()
-kt.close()
+kt._protocol.close_all()
 stop = time.time()
 print('done. slept=%s, took=%.2f for %s threads' % (n, stop - start, t))

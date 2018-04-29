@@ -177,6 +177,41 @@ cdef class SocketPool(object):
         if s and not s.is_closed:
             s.close()
 
+    cdef int close_idle(self, cutoff=60):
+        cdef:
+            float now = time.time()
+            float ts
+            int n = 0
+            _Socket sock
+
+        while self.free:
+            ts, sock = heapq.heappop(self.free)
+            if ts > (now - cutoff):
+                heapq.heappush(self.free, (ts, sock))
+                break
+            else:
+                n += 1
+
+        return n
+
+    cdef close_all(self):
+        cdef:
+            int n = 0
+            _Socket sock
+
+        while self.free:
+            _, sock = self.free.pop()
+            sock.close()
+            n += 1
+
+        tmp = self.in_use
+        self.in_use = {}
+        for sock in tmp.values():
+            sock.close()
+            n += 1
+
+        return n
+
     cdef _Socket create_socket(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if self.nodelay:
@@ -433,7 +468,13 @@ cdef class BinaryProtocol(object):
         self._socket_pool.checkin()
 
     def close(self):
-        self._socket_pool.close()
+        return self._socket_pool.close()
+
+    def close_all(self):
+        return self._socket_pool.close_all()
+
+    def close_idle(self, n=60):
+        return self._socket_pool.close_idle(n)
 
     cdef RequestBuffer request(self):
         return RequestBuffer(

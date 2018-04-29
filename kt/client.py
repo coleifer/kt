@@ -88,6 +88,9 @@ class BaseClient(object):
     def close(self):
         self._protocol.close()
 
+    def close_idle(self, n=60):
+        self._protocol.close_idle(n)
+
 
 class ScriptRunner(object):
     def __init__(self, client):
