@@ -39,6 +39,10 @@ assert 'foo' in kt
 assert 'bar' not in kt
 assert len(kt) == 1
 
+kt['x'] = 'a' * (1024 * 1024 * 32)  # Write 32 MB
+assert kt['x'] == 'a' * (1024 * 1024 * 32)
+assert kt.remove('x') == 1
+
 assert kt.clear()
 assert len(kt) == 0
 

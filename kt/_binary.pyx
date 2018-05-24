@@ -85,19 +85,18 @@ cdef class _Socket(object):
 
     cdef recv(self, int n):
         cdef:
-            bytes data
-            bytes result = b''
+            bytearray result = bytearray(n)  # Allocate buffer of size n.
             int l = 0
 
+        buf = memoryview(result)  # Obtain "pointer" to head of buffer.
         while n:
-            data = self._socket.recv(n)
-            l = len(data)
+            l = self._socket.recv_into(buf, n)
             if not l:
                 self.close()
                 raise ServerConnectionError('server went away')
             n -= l
-            result += data
-        return result
+            buf = buf[l:]  # Advance pointer by number of bytes read.
+        return bytes(result)  # Return bytes.
 
     cdef send(self, bytes data):
         try:
