@@ -736,11 +736,13 @@ cdef class TTBinaryProtocol(BinaryProtocol):
     def keys(self):
         cdef TTResponseHandler response
 
+        # iterinit method.
         self.request().write_magic(b'\xc8\x50').send()
         if self.response().check_error():
             return []
 
         while True:
+            # iternext method.
             self.request().write_magic(b'\xc8\x51').send()
             response = self.response()
             if response.check_error():
@@ -753,6 +755,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             RequestBuffer request = self.request()
             TTResponseHandler response
 
+        # fwmkeys method.
         (request
          .write_magic(b'\xc8\x58')
          .write_ints((len(bprefix), max_keys))
@@ -762,6 +765,10 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         response = self.response()
         if not response.check_error():
             return response.read_keys()
+
+    def sync(self):
+        self.request().write_magic(b'\xc8\x70').send()
+        return self.response().check_error() == 0
 
     def misc(self, name, keys=None, data=None):
         cdef:

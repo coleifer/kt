@@ -170,6 +170,20 @@ class KyotoTycoon(BaseClient):
     def report(self):
         return self._protocol_http.report()
 
+    def ulog_list(self):
+        return self._protocol_http.ulog_list()
+
+    def ulog_remove(self, max_dt):
+        return self._protocol_http.ulog_remove(max_dt)
+
+    def synchronize(self, hard=False, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.synchronize(hard, db)
+
+    def vacuum(self, step=0, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol_http.vacuum(step, db)
+
     def add(self, key, value, db=None, expire_time=None):
         db = self._default_db if db is None else db
         return self._protocol_http.add(key, value, db, expire_time)
@@ -371,6 +385,9 @@ class TokyoTyrant(BaseClient):
 
     def optimize(self):
         return self._protocol.misc('optimize', [])
+
+    def synchronize(self):
+        return self._protocol.sync()
 
     def clear_cache(self):
         return self._protocol.misc('cacheclear', [])

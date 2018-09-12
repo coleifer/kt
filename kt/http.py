@@ -1,6 +1,7 @@
 from base64 import b64decode
 from base64 import b64encode
 from functools import partial
+import datetime
 import sys
 try:
     from urllib.parse import quote_from_bytes
@@ -151,6 +152,40 @@ class HttpProtocol(object):
             return
         value = resp[self.decode_key(b'value')]
         return self.decode_value(value)
+
+    def ulog_list(self):
+        resp, status = self.request('/ulog_list', {}, None)
+        log_list = []
+        for filename, meta in resp.items():
+            size, ts_str = meta.decode('utf-8').split(':')
+            ts = datetime.datetime.fromtimestamp(int(ts_str) / 1e9)
+            log_list.append((filename, size, ts))
+        return log_list
+
+    def ulog_remove(self, max_dt=None):
+        max_dt = max_dt or datetime.datetime.now()
+        data = {'ts': str(int(max_dt.timestamp() * 1e9))}
+        resp, status = self.request('/ulog_remove', data, None)
+        return status == 200
+
+    def synchronize(self, hard=False, db=None):
+        data = {'hard': ''} if hard else {}
+        _, status = self.request('/synchronize', data, db)
+        return status == 200
+
+    def count(self, db=None):
+        resp = self.status(db)
+        return int(resp.get('count') or 0)
+
+    def size(self, db=None):
+        resp = self.status(db)
+        return int(resp.get('size') or 0)
+
+    def vacuum(self, step=0, db=None):
+        # If step > 0, the whole region is scanned.
+        data = {'step': str(step)} if step > 0 else {}
+        resp, status = self.request('/vacuum', data, db)
+        return status == 200
 
     def _simple_write(self, cmd, key, value, db=None, expire_time=None):
         data = {'key': key, 'value': self.encode_value(value)}
