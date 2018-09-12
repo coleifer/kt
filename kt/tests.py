@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 
@@ -15,6 +16,7 @@ from kt import KT_NONE
 from kt import KT_PICKLE
 from kt import KyotoTycoon
 from kt import TokyoTyrant
+from kt import TT_TABLE
 
 
 class BaseTestCase(unittest.TestCase):
@@ -295,6 +297,32 @@ class TestTokyoTyrantSerializers(TestKyotoTycoonSerializers):
     def get_client(self, serializer):
         return TokyoTyrant(self._server._host, self._server._port, serializer)
 
+
+class TestTokyoTyrantTableDB(BaseTestCase):
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {'database': '/tmp/kt_tt.tct', 'serializer': TT_TABLE}
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestTokyoTyrantTableDB, cls).tearDownClass()
+        if os.path.exists(cls.server_kwargs['database']):
+            os.unlink(cls.server_kwargs['database'])
+
+    def test_table_database(self):
+        self.db['t1'] = {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'}
+        self.assertEqual(self.db['t1'], {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+
+        self.db['t2'] = {}
+        self.assertEqual(self.db['t2'], {})
+
+        self.db.set_bulk({
+            't1': {'k1': 'v1', 'k2': 'v2'},
+            't2': {'x1': 'y1'},
+            't3': {}})
+        self.assertEqual(self.db.get_bulk(['t1', 't2', 't3', 'tx']), {
+            't1': {'k1': 'v1', 'k2': 'v2'},
+            't2': {'x1': 'y1'},
+            't3': {}})
 
 
 if __name__ == '__main__':

@@ -876,7 +876,7 @@ def table_to_dict(bytes table):
         dict d = {}
         list items = table.split(b'\x00')
         int i = 0
-        int l = len(items)
+        int l = len(items) - 1
 
     while i < l:
         bkey = items[i]

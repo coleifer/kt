@@ -7,6 +7,7 @@ from .client import KT_NONE
 from .client import KT_PICKLE
 from .client import KyotoTycoon
 from .client import TokyoTyrant
+from .client import TT_TABLE
 from .embedded import EmbeddedServer
 from .embedded import EmbeddedTokyoTyrantServer
 from .exceptions import ImproperlyConfigured
