@@ -58,6 +58,9 @@ class HttpProtocol(object):
     def close(self):
         self._session.close()
 
+    def __del__(self):
+        self._session.close()
+
     def _encode_keys_values(self, data):
         accum = []
         for key, value in data.items():
