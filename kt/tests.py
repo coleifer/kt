@@ -253,6 +253,37 @@ class TokyoTyrantTests(object):
         del self.db['key']
         self.assertEqual(len(self.db), 0)
 
+    def test_misc_commands(self):
+        self.db.set_bulk({'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+        self.assertEqual(self.db.misc('get', 'k1'), 'v1')
+        self.assertEqual(self.db.misc('get', 'k3'), 'v3')
+        self.assertTrue(self.db.misc('get', 'kx') is False)
+        self.assertTrue(self.db.misc('out', 'k1'))
+        self.assertFalse(self.db.misc('out', 'k1'))
+        self.assertTrue(self.db.misc('put', data={'k1': 'v1-x'}))
+        self.assertEqual(self.db.misc('get', 'k1'), 'v1-x')
+        self.assertTrue(self.db.misc('put', data={'k1': 'v1-y'}))
+        self.assertTrue(self.db.misc('putlist', data={'a': 'A', 'b': 'B'}))
+        self.assertEqual(self.db.misc('get', 'k1'), 'v1-y')
+        self.assertTrue(self.db.misc('out', 'k1'))
+        self.assertFalse(self.db.misc('out', 'k1'))
+        self.assertFalse(self.db.misc('get', 'k1'))
+        self.assertTrue(self.db.misc('put', data={'k1': 'v1-z'}))
+        self.assertTrue(self.db.misc('putlist', data={
+            'k1': 'v1-x',
+            'k2': 'v2-x',
+            'k3': 'v3-x'}))
+        self.assertEqual(
+            self.db.misc('getlist', ['k1', 'k2', 'k3', 'k4', 'k5']),
+            {'k1': 'v1-x', 'k2': 'v2-x', 'k3': 'v3-x'})
+        self.assertEqual(self.db.misc('getlist', ['k9', 'xz9']), {})
+        self.assertEqual(self.db.misc('getlist', []), {})
+        self.assertTrue(self.db.misc('outlist', ['k1', 'k2', 'k3']))
+        self.assertTrue(self.db.misc('outlist', ['k1', 'k3']))  # Always true.
+        self.assertFalse(self.db.misc('out', ['k1']))  # Returns true/false.
+        self.assertTrue(self.db.misc('putlist', data={}))  # Always true.
+        self.assertFalse(self.db.misc('put', data={}))  # Returns true/false.
+
 
 class TestTokyoTyrantHash(TokyoTyrantTests, BaseTestCase):
     server = EmbeddedTokyoTyrantServer
