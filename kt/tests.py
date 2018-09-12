@@ -185,6 +185,158 @@ class TestKyotoTycoonSerializers(BaseTestCase):
                          {'k1': b'v1', 'k2': b'v2'})
 
 
+class TestKyotoTycoonMultiDatabase(BaseTestCase):
+    server = EmbeddedServer
+    server_kwargs = {'database': '%', 'server_args': ['*']}
+
+    def test_multiple_databases_present(self):
+        report = self.db.report()
+        self.assertTrue('db_0' in report)
+        self.assertTrue('db_1' in report)
+        self.assertTrue(report['db_0'].endswith('path=*'))
+        self.assertTrue(report['db_1'].endswith('path=%'))
+
+    def test_multiple_databases(self):
+        k0 = KyotoTycoon(self._server._host, self._server._port, default_db=0)
+        k1 = KyotoTycoon(self._server._host, self._server._port, default_db=1)
+
+        k0.set('k1', 'v1-0')
+        k0.set('k2', 'v2-0')
+        self.assertEqual(len(k0), 2)
+        self.assertEqual(len(k1), 0)
+
+        k1.set('k1', 'v1-1')
+        k1.set('k2', 'v2-1')
+        self.assertEqual(len(k0), 2)
+        self.assertEqual(len(k1), 2)
+
+        self.assertEqual(k0.get('k1'), 'v1-0')
+        k0.remove('k1')
+        self.assertTrue(k0.get('k1') is None)
+
+        self.assertEqual(k1.get('k1'), 'v1-1')
+        k1.remove('k1')
+        self.assertTrue(k1.get('k1') is None)
+
+        k0.set_bulk({'k1': 'v1-0', 'k3': 'v3-0'})
+        k1.set_bulk({'k1': 'v1-1', 'k3': 'v3-1'})
+
+        self.assertEqual(k0.get_bulk(['k1', 'k2', 'k3']),
+                         {'k1': 'v1-0', 'k2': 'v2-0', 'k3': 'v3-0'})
+        self.assertEqual(k1.get_bulk(['k1', 'k2', 'k3']),
+                         {'k1': 'v1-1', 'k2': 'v2-1', 'k3': 'v3-1'})
+
+        self.assertEqual(k0.remove_bulk(['k3', 'k2']), 2)
+        self.assertEqual(k0.remove_bulk(['k3', 'k2']), 0)
+        self.assertEqual(k1.remove_bulk(['k3', 'k2']), 2)
+        self.assertEqual(k1.remove_bulk(['k3', 'k2']), 0)
+
+        self.assertTrue(k0.add('k2', 'v2-0'))
+        self.assertFalse(k0.add('k2', 'v2-x'))
+
+        self.assertTrue(k1.add('k2', 'v2-1'))
+        self.assertFalse(k1.add('k2', 'v2-x'))
+
+        self.assertEqual(k0['k2'], 'v2-0')
+        self.assertEqual(k1['k2'], 'v2-1')
+
+        self.assertTrue(k0.replace('k2', 'v2-0x'))
+        self.assertFalse(k0.replace('k3', 'v3-0'))
+        self.assertTrue(k1.replace('k2', 'v2-1x'))
+        self.assertFalse(k1.replace('k3', 'v3-1'))
+
+        self.assertEqual(k0['k2'], 'v2-0x')
+        self.assertEqual(k1['k2'], 'v2-1x')
+
+        self.assertTrue(k0.append('k3', 'v3-0'))
+        self.assertTrue(k0.append('k3', 'x'))
+        self.assertTrue(k1.append('k3', 'v3-1'))
+        self.assertTrue(k1.append('k3', 'x'))
+
+        self.assertEqual(k0['k3'], 'v3-0x')
+        self.assertEqual(k1['k3'], 'v3-1x')
+
+        for k in (k0, k1):
+            self.assertTrue(k.exists('k3'))
+            self.assertEqual(k.remove('k3'), 1)
+            self.assertFalse(k.exists('k3'))
+
+        self.assertEqual(k0.seize('k2'), 'v2-0x')
+        self.assertEqual(k1.seize('k2'), 'v2-1x')
+
+        self.assertTrue(k0.cas('k1', 'v1-0', 'v1-0x'))
+        self.assertFalse(k0.cas('k1', 'v1-0', 'v1-0z'))
+
+        self.assertTrue(k1.cas('k1', 'v1-1', 'v1-1x'))
+        self.assertFalse(k1.cas('k1', 'v1-1', 'v1-1z'))
+
+        self.assertEqual(k0['k1'], 'v1-0x')
+        self.assertEqual(k1['k1'], 'v1-1x')
+
+        for k in (k0, k1):
+            k.remove_bulk(['i', 'j'])
+            self.assertEqual(k.incr('i'), 1)
+            self.assertEqual(k.incr('i'), 2)
+
+            self.assertEqual(k.incr_double('j'), 1.)
+            self.assertEqual(k.incr_double('j'), 2.)
+
+        self.assertEqual(k0['k1'], 'v1-0x')
+        self.assertEqual(k0['k1', 1], 'v1-1x')
+        self.assertEqual(k1['k1'], 'v1-1x')
+        self.assertEqual(k1['k1', 0], 'v1-0x')
+
+        k0['k2'] = 'v2-0y'
+        k0['k2', 1] = 'v2-1y'
+        self.assertEqual(k0.get('k2'), 'v2-0y')
+        self.assertEqual(k1.get('k2'), 'v2-1y')
+        k1['k2'] = 'v2-1z'
+        k1['k2', 0] = 'v2-0z'
+        self.assertEqual(k0.get('k2'), 'v2-0z')
+        self.assertEqual(k1.get('k2'), 'v2-1z')
+
+        del k0['k1']
+        del k0['k1', 1]
+        self.assertTrue(k0['k1'] is None)
+        self.assertTrue(k1['k1'] is None)
+        del k1['k2']
+        del k1['k2', 0]
+        self.assertTrue(k0['k2'] is None)
+        self.assertTrue(k1['k2'] is None)
+
+        k0['k3'] = 'v3-0'
+        k0['k03'] = 'v03'
+        k1['k3'] = 'v3-1'
+        k1['k13'] = 'v13'
+        self.assertTrue('k3' in k0)
+        self.assertTrue('k03' in k0)
+        self.assertTrue('k13' not in k0)
+        self.assertTrue('k3' in k1)
+        self.assertTrue('k13' in k1)
+        self.assertTrue('k03' not in k1)
+
+        self.assertEqual(sorted(k0.match_prefix('k')), ['k03', 'k3'])
+        self.assertEqual(sorted(k0.match_prefix('k', db=1)), ['k13', 'k3'])
+        self.assertEqual(sorted(k1.match_prefix('k')), ['k13', 'k3'])
+        self.assertEqual(sorted(k1.match_prefix('k', db=0)), ['k03', 'k3'])
+
+        self.assertEqual(sorted(k0.match_regex('k')), ['k03', 'k3'])
+        self.assertEqual(sorted(k0.match_regex('k', db=1)), ['k13', 'k3'])
+        self.assertEqual(sorted(k1.match_regex('k')), ['k13', 'k3'])
+        self.assertEqual(sorted(k1.match_regex('k', db=0)), ['k03', 'k3'])
+
+        self.assertEqual(sorted(k0.keys()), ['i', 'j', 'k03', 'k3'])
+        self.assertEqual(sorted(k0.keys(1)), ['i', 'j', 'k13', 'k3'])
+        self.assertEqual(sorted(k1.keys()), ['i', 'j', 'k13', 'k3'])
+        self.assertEqual(sorted(k1.keys(0)), ['i', 'j', 'k03', 'k3'])
+
+        k0.clear()
+        self.assertTrue('k3' not in k0)
+        self.assertTrue('k3' in k1)
+        k1.clear()
+        self.assertTrue('k3' not in k1)
+
+
 class TokyoTyrantTests(object):
     def test_basic_operations(self):
         self.assertEqual(len(self.db), 0)
