@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 
+from .client import KT_BINARY
 from .client import KyotoTycoon
 from .client import TokyoTyrant
 from .exceptions import KyotoTycoonError
@@ -17,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 class EmbeddedServer(object):
     def __init__(self, server='ktserver', host='127.0.0.1', port=None,
-                 database='*', server_args=None):
+                 database='*', serializer=None, server_args=None):
         self._server = server
         self._host = host
         self._port = port
+        self._serializer = serializer or KT_BINARY
         self._database = database
         self._server_args = server_args or []
 
@@ -34,7 +36,7 @@ class EmbeddedServer(object):
         self._client = None
 
     def _create_client(self):
-        return KyotoTycoon(self._host, self._port)
+        return KyotoTycoon(self._host, self._port, self._serializer)
 
     @property
     def client(self):
@@ -153,9 +155,9 @@ class EmbeddedServer(object):
 
 class EmbeddedTokyoTyrantServer(EmbeddedServer):
     def __init__(self, server='ttserver', host='127.0.0.1', port=None,
-                 database='*', server_args=None):
-        super(EmbeddedTokyoTyrantServer, self).__init__(server, host, port,
-                                                        database, server_args)
+                 database='*', serializer=None, server_args=None):
+        super(EmbeddedTokyoTyrantServer, self).__init__(
+            server, host, port, database, serializer, server_args)
 
     def _create_client(self):
-        return TokyoTyrant(self._host, self._port)
+        return TokyoTyrant(self._host, self._port, self._serializer)

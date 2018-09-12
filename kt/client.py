@@ -357,6 +357,9 @@ class TokyoTyrant(BaseClient):
     def exists(self, key):
         return self._protocol.vsiz(key)
 
+    def length(self, key):
+        return self._protocol.vsiz(key)
+
     def incr(self, key, n=1):
         return self._protocol.addint(key, n)
 
@@ -414,7 +417,7 @@ class TokyoTyrant(BaseClient):
         return {} if rv is True else rv
 
     def iter_from(self, start_key):
-        self._protocol.misc('iterinit', [item.start])
+        self._protocol.misc('iterinit', [start_key])
         accum = {}
         while True:
             kv = self._protocol.misc('iternext', [])
