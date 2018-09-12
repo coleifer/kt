@@ -1,6 +1,8 @@
 import os
 import sys
+import threading
 import unittest
+import warnings
 
 try:
     import msgpack
@@ -30,7 +32,14 @@ class BaseTestCase(unittest.TestCase):
         if cls.server is None:
             return
 
-        cls._server = cls.server(**(cls.server_kwargs or {}))
+        if sys.version_info[0] > 2:
+            warnings.filterwarnings(action='ignore', message='unclosed',
+                                    category=ResourceWarning)
+
+        kwargs = {'quiet': True}
+        if cls.server_kwargs:
+            kwargs.update(cls.server_kwargs)
+        cls._server = cls.server(**kwargs)
         cls._server.run()
         cls.db = cls._server.client
 
@@ -38,6 +47,7 @@ class BaseTestCase(unittest.TestCase):
     def tearDownClass(cls):
         if cls._server is not None:
             cls._server.stop()
+            cls.db.close()
             cls.db = None
 
     def tearDown(self):
@@ -168,21 +178,29 @@ class TestKyotoTycoonSerializers(BaseTestCase):
     def test_serializer_json(self):
         self._test_serializer_object(KT_JSON)
 
-    @unittest.skipIf(msgpack is None, 'msgpack-python not installed')
-    def test_serializer_msgpack(self):
-        self._test_serializer_object(KT_MSGPACK)
-
     def test_serializer_pickle(self):
         self._test_serializer_object(KT_PICKLE)
 
     def test_serializer_none(self):
         db = self.get_client(KT_NONE)
-        db.set('k1', 'v1')
-        self.assertEqual(self.db.get('k1'), b'v1')
+        db.set('k1', b'v1')
+        self.assertEqual(self.db.get('k1'), 'v1')
 
         db[b'k2'] = b'v2'
         self.assertEqual(self.db.get_bulk([b'k1', b'k2']),
-                         {'k1': b'v1', 'k2': b'v2'})
+                         {'k1': 'v1', 'k2': 'v2'})
+
+    @unittest.skipIf(msgpack is None, 'msgpack-python not installed')
+    def test_serializer_msgpack(self):
+        db = self.get_client(KT_MSGPACK)
+
+        obj = {'w': {'wk': 'wv'}, 'x': 0, 'y': ['aa', 'bb'], 'z': None}
+        db.set('k1', obj)
+        self.assertEqual(db.get('k1'), {b'w': {b'wk': b'wv'}, b'x': 0,
+                                        b'y': [b'aa', b'bb'], b'z': None})
+
+        db.set('k2', '')
+        self.assertEqual(db.get('k2'), b'')
 
 
 class TestKyotoTycoonMultiDatabase(BaseTestCase):
@@ -193,8 +211,8 @@ class TestKyotoTycoonMultiDatabase(BaseTestCase):
         report = self.db.report()
         self.assertTrue('db_0' in report)
         self.assertTrue('db_1' in report)
-        self.assertTrue(report['db_0'].endswith('path=*'))
-        self.assertTrue(report['db_1'].endswith('path=%'))
+        self.assertTrue(report['db_0'].endswith(b'path=*'))
+        self.assertTrue(report['db_1'].endswith(b'path=%'))
 
     def test_multiple_databases(self):
         k0 = KyotoTycoon(self._server._host, self._server._port, default_db=0)
@@ -335,6 +353,29 @@ class TestKyotoTycoonMultiDatabase(BaseTestCase):
         self.assertTrue('k3' in k1)
         k1.clear()
         self.assertTrue('k3' not in k1)
+
+
+class TestMultipleThreads(BaseTestCase):
+    server = EmbeddedServer
+    server_kwargs = {'database': '*'}
+
+    def test_multiple_threads(self):
+        def write_and_read(n, s):
+            for i in range(s, n + s):
+                self.db.set('k%s' % i, 'v%s' % i)
+
+            keys = ['k%s' % i for i in range(s, n + s)]
+            result = self.db.get_bulk(keys)
+            self.assertEqual(result, dict(('k%s' % i, 'v%s' % i)
+                                          for i in range(s, n + s)))
+            self.db.close()
+
+        threads = [threading.Thread(target=write_and_read,
+                                    args=(100, 100 * i)) for i in range(10)]
+        for t in threads:
+            t.daemon = True
+            t.start()
+        [t.join() for t in threads]
 
 
 class TokyoTyrantTests(object):

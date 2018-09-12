@@ -18,13 +18,14 @@ logger = logging.getLogger(__name__)
 
 class EmbeddedServer(object):
     def __init__(self, server='ktserver', host='127.0.0.1', port=None,
-                 database='*', serializer=None, server_args=None):
+                 database='*', serializer=None, server_args=None, quiet=False):
         self._server = server
         self._host = host
         self._port = port
         self._serializer = serializer or KT_BINARY
         self._database = database
         self._server_args = server_args or []
+        self._quiet = quiet
 
         # Signals for server startup and shutdown.
         self._server_started = threading.Event()
@@ -61,10 +62,11 @@ class EmbeddedServer(object):
             str(port)] + self._server_args + [self._database]
 
         while not self._server_terminated.is_set():
-            self._server_p = subprocess.Popen(
-                command,
-                stderr=sys.__stderr__.fileno(),
-                stdout=sys.__stdout__.fileno())
+            if self._quiet:
+                out, err = subprocess.PIPE, subprocess.PIPE
+            else:
+                out, err = sys.__stdout__.fileno(), sys.__stderr__.fileno()
+            self._server_p = subprocess.Popen(command, stderr=err, stdout=out)
 
             self._server_started.set()
             self._server_p.wait()
@@ -155,9 +157,9 @@ class EmbeddedServer(object):
 
 class EmbeddedTokyoTyrantServer(EmbeddedServer):
     def __init__(self, server='ttserver', host='127.0.0.1', port=None,
-                 database='*', serializer=None, server_args=None):
+                 database='*', serializer=None, server_args=None, quiet=False):
         super(EmbeddedTokyoTyrantServer, self).__init__(
-            server, host, port, database, serializer, server_args)
+            server, host, port, database, serializer, server_args, quiet)
 
     def _create_client(self):
         return TokyoTyrant(self._host, self._port, self._serializer)
