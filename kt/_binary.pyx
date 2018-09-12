@@ -858,3 +858,29 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         response = self.response()
         response.check_error()
         return response.read_bytes()
+
+
+def dict_to_table(dict d):
+    buf = io.BytesIO()
+    for key, value in d.items():
+        buf.write(encode(key))
+        buf.write(b'\x00')
+        buf.write(encode(value))
+        buf.write(b'\x00')
+    return buf.getvalue()
+
+
+def table_to_dict(bytes table):
+    cdef:
+        bytes bkey, bval
+        dict d = {}
+        list items = table.split(b'\x00')
+        int i = 0
+        int l = len(items)
+
+    while i < l:
+        bkey = items[i]
+        bval = items[i + 1]
+        d[decode(bkey)] = decode(bval)
+        i += 2
+    return d

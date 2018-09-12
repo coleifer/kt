@@ -17,7 +17,9 @@ except ImportError:
 from ._binary import KTBinaryProtocol
 from ._binary import TTBinaryProtocol
 from ._binary import decode
+from ._binary import dict_to_table
 from ._binary import encode
+from ._binary import table_to_dict
 from .exceptions import ImproperlyConfigured
 from .exceptions import KyotoTycoonError
 from .exceptions import ProtocolError
@@ -31,7 +33,9 @@ KT_JSON = 'json'
 KT_MSGPACK = 'msgpack'
 KT_NONE = 'none'
 KT_PICKLE = 'pickle'
-KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE))
+TT_TABLE = 'table'
+KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE,
+                      TT_TABLE))
 
 
 class BaseClient(object):
@@ -62,6 +66,9 @@ class BaseClient(object):
             self._encode_value = partial(pickle.dumps,
                                          protocol=pickle.HIGHEST_PROTOCOL)
             self._decode_value = pickle.loads
+        elif self._serializer == TT_TABLE:
+            self._encode_value = dict_to_table
+            self._decode_value = table_to_dict
         else:
             raise ImproperlyConfigured('unrecognized serializer "%s" - use one'
                                        ' of: %s' % (self._serializer,
