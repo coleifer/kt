@@ -2,6 +2,7 @@ from cpython.bytes cimport PyBytes_Check
 from cpython.unicode cimport PyUnicode_AsUTF8String
 from cpython.unicode cimport PyUnicode_Check
 from cpython.version cimport PY_MAJOR_VERSION
+from libc.stdint cimport int64_t
 
 import heapq
 import io
@@ -349,7 +350,7 @@ cdef class BaseResponseHandler(object):
 
     cdef double read_double(self):
         cdef:
-            long i, m
+            int64_t i, m
         i, m = s_unpack('>QQ', self.read(16))
         return i + (m * 1e-12)
 
