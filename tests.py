@@ -586,6 +586,31 @@ class TestTokyoTyrantSearch(BaseTestCase):
         self.assertEqual(query.search(self.db),
                          ['charlie', 'leslie', 'huey'])
 
+        query = (QueryBuilder()
+                 .order_by('name', client.ORDER_STR_DESC)
+                 .limit(3)
+                 .offset(1))
+        self.assertEqual(query.search(self.db), ['mickey', 'leslie', 'huey'])
+
+    def test_indexing(self):
+        self.assertTrue(self.db.set_index('name', client.INDEX_STR))
+        self.assertTrue(self.db.set_index('age', client.INDEX_NUM))
+
+        # Check if index exists first -- returns False.
+        self.assertFalse(self.db.set_index('name', client.INDEX_STR, True))
+        self.assertTrue(self.db.optimize_index('age'))
+
+        # Perform a query.
+        query = (QueryBuilder()
+                 .filter('age', client.OP_NUM_LT, '10')
+                 .order_by('name', client.ORDER_STR_DESC)
+                 .limit(3)
+                 .offset(1))
+        self.assertEqual(query.search(self.db), ['mickey', 'huey', 'connor'])
+
+        # Verify we can delete an index.
+        self.assertTrue(self.db.delete_index('name'))
+
 
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)
