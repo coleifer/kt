@@ -826,7 +826,12 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         rv = response.check_error()  # 1 if simple error, 0 if OK.
         nelem = response.read_int()
 
-        if nelem == 0 and bname != b'getlist':
+        if bname == b'search':
+            accum = []
+            for _ in range(nelem):
+                accum.append(response.read_key())
+            return accum
+        elif nelem == 0 and bname != b'getlist':
             return rv == 0
         elif nelem == 1:
             return response.read_value()

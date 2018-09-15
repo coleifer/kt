@@ -3,6 +3,7 @@ from functools import partial
 import json
 import re
 import socket
+import sys
 import time
 try:
     import cPickle as pickle
@@ -26,6 +27,10 @@ from .exceptions import ProtocolError
 from .exceptions import ServerConnectionError
 from .exceptions import ServerError
 from .http import HttpProtocol
+
+
+if sys.version_info[0] > 2:
+    basestring = str
 
 
 KT_BINARY = 'binary'
@@ -430,5 +435,122 @@ class TokyoTyrant(BaseClient):
     def keys(self):
         return self._protocol.keys()
 
+    def set_index(self, name, index_type, check_exists=False):
+        if check_exists:
+            index_type |= IOP_KEEP
+        return self._protocol.misc('setindex', keys=[name, str(index_type)])
+
+    def optimize_index(self, name):
+        return self._protocol.misc('setindex', keys=[name, str(IOP_OPTIMIZE)])
+
+    def delete_index(self, name):
+        return self._protocol.misc('setindex', keys=[name, str(IOP_DELETE)])
+
+    def search(self, expressions):
+        keys = [_pack_misc_cmd(*expr) for expr in expressions]
+        return self._protocol.misc('search', keys=keys)
+
+    def genuid(self):
+        return int(self._protocol.misc('genuid', keys=[]))
+
     def __iter__(self):
         return iter(self._protocol.keys())
+
+
+def _pack_misc_cmd(*args):
+    message = [encode(str(arg) if not isinstance(arg, basestring) else arg)
+               for arg in args]
+    return b'\x00'.join(message)
+
+
+def clone_query(method):
+    def inner(self, *args, **kwargs):
+        clone = self.clone()
+        method(clone, *args, **kwargs)
+        return clone
+    return inner
+
+
+class QueryBuilder(object):
+    def __init__(self):
+        self._conditions = []
+        self._order_by = []
+        self._limit = None
+        self._offset = None
+
+    def clone(self):
+        obj = QueryBuilder()
+        obj._conditions = list(self._conditions)
+        obj._order_by = list(self._order_by)
+        obj._limit = self._limit
+        obj._offset = self._offset
+        return obj
+
+    @clone_query
+    def filter(self, column, op, value):
+        self._conditions.append((column, op, value))
+
+    @clone_query
+    def order_by(self, column, ordering=None):
+        self._order_by.append((column, ordering or ORDER_STR_ASC))
+
+    @clone_query
+    def limit(self, limit=None):
+        self._limit = limit
+
+    @clone_query
+    def offset(self, offset=None):
+        self._offset = offset
+
+    def build_search(self, operation=None):
+        cmd = [('addcond', col, op, val) for col, op, val in self._conditions]
+        for col, order in self._order_by:
+            cmd.append(('setorder', col, order))
+        if self._limit is not None or self._offset is not None:
+            cmd.append(('setlimit', self._limit or 1 << 31, self._offset or 0))
+        if operation:
+            cmd.append(operation)
+        return cmd
+
+    def search(self, client):
+        return client.search(self.build_search())
+
+    def delete(self, client):
+        return client.search(self.build_search(b'out'))
+
+
+OP_STR_EQ = 0
+OP_STR_CONTAINS = 1
+OP_STR_STARTSWITH = 2
+OP_STR_ENDSWITH = 3
+OP_STR_ALL = 4
+OP_STR_ANY = 5
+OP_STR_ANYEXACT = 6
+OP_STR_REGEX = 7
+OP_NUM_EQ = 8
+OP_NUM_GT = 9
+OP_NUM_GE = 10
+OP_NUM_LT = 11
+OP_NUM_LE = 12
+OP_NUM_BETWEEN = 13
+OP_NUM_ANYEXACT = 14
+OP_FTS_PHRASE = 15
+OP_FTS_ALL = 16
+OP_FTS_ANY = 17
+OP_FTS_EXPRESSION = 18
+
+OP_NEGATE = 1 << 24
+OP_NOINDEX = 1 << 25
+
+ORDER_STR_ASC = 0
+ORDER_STR_DESC = 1
+ORDER_NUM_ASC = 2
+ORDER_NUM_DESC = 3
+
+INDEX_STR = 0
+INDEX_NUM = 1
+INDEX_TOKEN = 2
+INDEX_QGRAM = 3
+IOP_OPTIMIZE = 9998
+IOP_DELETE = 9999
+IOP_KEEP = 1 << 24

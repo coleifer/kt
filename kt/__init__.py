@@ -6,6 +6,7 @@ from .client import KT_MSGPACK
 from .client import KT_NONE
 from .client import KT_PICKLE
 from .client import KyotoTycoon
+from .client import QueryBuilder
 from .client import TokyoTyrant
 from .client import TT_TABLE
 from .embedded import EmbeddedServer

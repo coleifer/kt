@@ -17,8 +17,10 @@ from kt import KT_JSON
 from kt import KT_NONE
 from kt import KT_PICKLE
 from kt import KyotoTycoon
+from kt import QueryBuilder
 from kt import TokyoTyrant
 from kt import TT_TABLE
+from kt import client
 
 
 class BaseTestCase(unittest.TestCase):
@@ -547,6 +549,42 @@ class TestTokyoTyrantTableDB(BaseTestCase):
             't1': {'k1': 'v1', 'k2': 'v2'},
             't2': {'x1': 'y1'},
             't3': {}})
+
+
+class TestTokyoTyrantSearch(BaseTestCase):
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {'database': '/tmp/kt_tt.tct', 'serializer': TT_TABLE}
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestTokyoTyrantSearch, cls).tearDownClass()
+        if os.path.exists(cls.server_kwargs['database']):
+            os.unlink(cls.server_kwargs['database'])
+
+    def setUp(self):
+        super(TestTokyoTyrantSearch, self).setUp()
+        data = [
+            {'name': 'huey', 'type': 'cat', 'eyes': 'blue', 'age': '7'},
+            {'name': 'mickey', 'type': 'dog', 'eyes': 'blue', 'age': '9'},
+            {'name': 'zaizee', 'type': 'cat', 'eyes': 'blue', 'age': '5'},
+            {'name': 'charlie', 'type': 'human', 'eyes': 'brown', 'age': '35'},
+            {'name': 'leslie', 'type': 'human', 'eyes': 'blue', 'age': '34'},
+            {'name': 'connor', 'type': 'human', 'eyes': 'brown', 'age': '3'}]
+        for item in data:
+            self.db[item['name']] = item
+
+    def test_search(self):
+        query = (QueryBuilder()
+                 .filter('type', client.OP_STR_EQ, 'cat')
+                 .order_by('name', client.ORDER_STR_DESC))
+        self.assertEqual(query.search(self.db), ['zaizee', 'huey'])
+
+        query = (QueryBuilder()
+                 .filter('age', client.OP_NUM_GE, '7')
+                 .filter('type', client.OP_STR_ANY, 'human,cat')
+                 .order_by('age', client.ORDER_NUM_DESC))
+        self.assertEqual(query.search(self.db),
+                         ['charlie', 'leslie', 'huey'])
 
 
 if __name__ == '__main__':
