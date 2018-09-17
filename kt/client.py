@@ -21,6 +21,10 @@ from ._binary import decode
 from ._binary import dict_to_table
 from ._binary import encode
 from ._binary import table_to_dict
+from .constants import IOP_DELETE
+from .constants import IOP_KEEP
+from .constants import IOP_OPTIMIZE
+from .constants import ORDER_STR_ASC
 from .exceptions import ImproperlyConfigured
 from .exceptions import KyotoTycoonError
 from .exceptions import ProtocolError
@@ -517,40 +521,3 @@ class QueryBuilder(object):
 
     def delete(self, client):
         return client.search(self.build_search(b'out'))
-
-
-OP_STR_EQ = 0
-OP_STR_CONTAINS = 1
-OP_STR_STARTSWITH = 2
-OP_STR_ENDSWITH = 3
-OP_STR_ALL = 4
-OP_STR_ANY = 5
-OP_STR_ANYEXACT = 6
-OP_STR_REGEX = 7
-OP_NUM_EQ = 8
-OP_NUM_GT = 9
-OP_NUM_GE = 10
-OP_NUM_LT = 11
-OP_NUM_LE = 12
-OP_NUM_BETWEEN = 13
-OP_NUM_ANYEXACT = 14
-OP_FTS_PHRASE = 15
-OP_FTS_ALL = 16
-OP_FTS_ANY = 17
-OP_FTS_EXPRESSION = 18
-
-OP_NEGATE = 1 << 24
-OP_NOINDEX = 1 << 25
-
-ORDER_STR_ASC = 0
-ORDER_STR_DESC = 1
-ORDER_NUM_ASC = 2
-ORDER_NUM_DESC = 3
-
-INDEX_STR = 0
-INDEX_NUM = 1
-INDEX_TOKEN = 2
-INDEX_QGRAM = 3
-IOP_OPTIMIZE = 9998
-IOP_DELETE = 9999
-IOP_KEEP = 1 << 24

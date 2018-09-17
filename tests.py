@@ -20,7 +20,7 @@ from kt import KyotoTycoon
 from kt import QueryBuilder
 from kt import TokyoTyrant
 from kt import TT_TABLE
-from kt import client
+from kt import constants
 
 
 class BaseTestCase(unittest.TestCase):
@@ -575,35 +575,35 @@ class TestTokyoTyrantSearch(BaseTestCase):
 
     def test_search(self):
         query = (QueryBuilder()
-                 .filter('type', client.OP_STR_EQ, 'cat')
-                 .order_by('name', client.ORDER_STR_DESC))
+                 .filter('type', constants.OP_STR_EQ, 'cat')
+                 .order_by('name', constants.ORDER_STR_DESC))
         self.assertEqual(query.search(self.db), ['zaizee', 'huey'])
 
         query = (QueryBuilder()
-                 .filter('age', client.OP_NUM_GE, '7')
-                 .filter('type', client.OP_STR_ANY, 'human,cat')
-                 .order_by('age', client.ORDER_NUM_DESC))
+                 .filter('age', constants.OP_NUM_GE, '7')
+                 .filter('type', constants.OP_STR_ANY, 'human,cat')
+                 .order_by('age', constants.ORDER_NUM_DESC))
         self.assertEqual(query.search(self.db),
                          ['charlie', 'leslie', 'huey'])
 
         query = (QueryBuilder()
-                 .order_by('name', client.ORDER_STR_DESC)
+                 .order_by('name', constants.ORDER_STR_DESC)
                  .limit(3)
                  .offset(1))
         self.assertEqual(query.search(self.db), ['mickey', 'leslie', 'huey'])
 
     def test_indexing(self):
-        self.assertTrue(self.db.set_index('name', client.INDEX_STR))
-        self.assertTrue(self.db.set_index('age', client.INDEX_NUM))
+        self.assertTrue(self.db.set_index('name', constants.INDEX_STR))
+        self.assertTrue(self.db.set_index('age', constants.INDEX_NUM))
 
         # Check if index exists first -- returns False.
-        self.assertFalse(self.db.set_index('name', client.INDEX_STR, True))
+        self.assertFalse(self.db.set_index('name', constants.INDEX_STR, True))
         self.assertTrue(self.db.optimize_index('age'))
 
         # Perform a query.
         query = (QueryBuilder()
-                 .filter('age', client.OP_NUM_LT, '10')
-                 .order_by('name', client.ORDER_STR_DESC)
+                 .filter('age', constants.OP_NUM_LT, '10')
+                 .order_by('name', constants.ORDER_STR_DESC)
                  .limit(3)
                  .offset(1))
         self.assertEqual(query.search(self.db), ['mickey', 'huey', 'connor'])
