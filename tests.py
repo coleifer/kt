@@ -629,7 +629,7 @@ class TestTokyoTyrantModels(BaseTestCase):
         if os.path.exists(cls.server_kwargs['database']):
             os.unlink(cls.server_kwargs['database'])
 
-    def test_model_simple(self):
+    def test_basic_crud_apis(self):
         class User(Model):
             __database__ = self.db
             name = TextField()
@@ -646,11 +646,79 @@ class TestTokyoTyrantModels(BaseTestCase):
         self.assertEqual(u.status, 1)
 
         u = User['u3']
+        u.status = 4
+        self.assertTrue(u.save())
+        u = User['u3']
+        self.assertEqual(u.key, 'u3')
         self.assertEqual(u.name, 'mickey')
         self.assertEqual(u.dob, '2009-05-01')
-        self.assertEqual(u.status, 3)
+        self.assertEqual(u.status, 4)
 
+        u4 = User(key='u4', name='zaizee', dob='2012-01-01')
+        u4.save()
+        u4_db = User['u4']
+        self.assertEqual(u4_db.key, 'u4')
+        self.assertEqual(u4_db.name, 'zaizee')
+        self.assertEqual(u4_db.dob, '2012-01-01')
+        self.assertTrue(u4_db.status is None)
+
+        u4_db.delete()
         self.assertRaises(KeyError, lambda: User['u4'])
+
+    def test_model_field_types(self):
+        class T(Model):
+            __database__ = self.db
+            bytes_field = BytesField()
+            text_field = TextField()
+            int_field = IntegerField()
+            float_field = FloatField()
+
+        # All values are stored/retrieved correctly.
+        T.create(key='t1', bytes_field=b'\xfftest\xff', text_field='test',
+                 int_field=7, float_field=3.14)
+        t1 = T['t1']
+        self.assertEqual(t1.key, 't1')
+        self.assertEqual(t1.bytes_field, b'\xfftest\xff')
+        self.assertEqual(t1.text_field, 'test')
+        self.assertEqual(t1.int_field, 7)
+        self.assertEqual(t1.float_field, 3.14)
+
+        # All blank fields works correctly.
+        T.create(key='t2')
+        t2 = T['t2']
+        self.assertEqual(t2.key, 't2')
+        self.assertTrue(t2.bytes_field is None)
+        self.assertTrue(t2.text_field is None)
+        self.assertTrue(t2.int_field is None)
+        self.assertTrue(t2.float_field is None)
+
+    def test_query(self):
+        class User(Model):
+            __database__ = self.db
+            username = TextField()
+            status = IntegerField(index=True)
+            tags = TextField(index=True)
+
+        data = [
+            ('huey', 1, 'cat white'),
+            ('mickey', 2, 'dog black'),
+            ('zaizee', 1, 'cat gray black'),
+            ('scout', 2, 'dog black white'),
+            ('pipey', 3, 'bird red')]
+        for username, status, tags in data:
+            User.create(username, username=username, status=status, tags=tags)
+
+        # Verify we can create indexes.
+        User.create_indexes()
+
+        # Simple multi-term filter and order-by.
+        query = User.query().filter(
+            (User.status < 3),
+            (User.tags.contains_any('white'))).order_by(User.status.desc())
+        self.assertEqual(query.execute(), ['scout', 'huey'])
+
+        query = User.query().filter(User.status == 1).order_by(User.username)
+        self.assertEqual(query.execute(), ['huey', 'zaizee'])
 
 
 if __name__ == '__main__':

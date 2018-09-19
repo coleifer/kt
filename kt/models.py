@@ -294,6 +294,8 @@ class ModelSearch(object):
     @clone_query
     def order_by(self, *ordering):
         for item in ordering:
+            if isinstance(item, Field):
+                item = item.asc()
             self._order_by.append((item.field.name, item.value))
 
     @clone_query
