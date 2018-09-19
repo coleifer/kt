@@ -34,7 +34,7 @@ from .http import HttpProtocol
 
 
 if sys.version_info[0] > 2:
-    basestring = str
+    basestring = (bytes, str)
 
 
 KT_BINARY = 'binary'
