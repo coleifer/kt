@@ -808,6 +808,13 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k13', 'k14', 'k15'])
 
+        query = (KV.query()
+                 .filter(KV.status.matches_any([8, 10, 11, 12]))
+                 .filter(KV.value != 'v11')
+                 .filter(KV.status != 10)
+                 .order_by(KV.value))
+        self.assertEqual(query.execute(), ['k12', 'k8'])
+
 
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)
