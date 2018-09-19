@@ -349,7 +349,7 @@ class ModelSearch(object):
         if self._limit is not None or self._offset is not None:
             cmd.append(('setlimit', self._limit or 1 << 31, self._offset or 0))
         if operation:
-            cmd.append(operation)
+            cmd.append((operation,))
         return cmd
 
     def execute(self):
@@ -359,7 +359,8 @@ class ModelSearch(object):
         return self._model.__database__.search(self._build_search(b'out'))
 
     def count(self):
-        return self._model.__database__.search(self._build_search(b'count'))
+        res = self._model.__database__.search(self._build_search(b'count'))
+        return int(res[0])
 
     def __iter__(self):
         return iter(self.execute())

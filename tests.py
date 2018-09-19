@@ -715,6 +715,9 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         self.assertEqual(len(data), 1)
         assertModel(data[0], 2)
 
+        del KV['k2']
+        self.assertRaises(KeyError, lambda: KV['k2'])
+
     def test_model_field_types(self):
         class T(self.Base):
             bytes_field = BytesField()
@@ -744,8 +747,7 @@ class TestTokyoTyrantModels(BaseModelTestCase):
 
 class TestTokyoTyrantQuery(BaseModelTestCase):
     def test_query(self):
-        class User(Model):
-            __database__ = self.db
+        class User(self.Base):
             username = TextField()
             status = IntegerField(index=True)
             tags = TextField(index=True)
@@ -770,6 +772,41 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
 
         query = User.query().filter(User.status == 1).order_by(User.username)
         self.assertEqual(query.execute(), ['huey', 'zaizee'])
+
+    def test_query_apis(self):
+        class KV(self.Base):
+            value = TextField()
+            status = IntegerField(index=True)
+
+        KV.create_list([KV(key='k%s' % i, value='v%s' % i, status=i)
+                        for i in range(20)])
+        KV.create_indexes()
+
+        query = KV.query().filter(KV.value.endswith('5')).order_by(KV.status)
+        self.assertEqual(query.execute(), ['k5', 'k15'])
+        self.assertEqual(query.count(), 2)
+
+        query = KV.query().filter(
+            KV.value.startswith('v1'),
+            KV.status < 13).order_by(KV.value)
+        self.assertEqual(query.execute(), ['k1', 'k10', 'k11', 'k12'])
+        self.assertEqual(query.count(), 4)
+
+        query = KV.query().filter(KV.value.endswith('9')).delete()
+        self.assertRaises(KeyError, lambda: KV['k9'])
+        self.assertRaises(KeyError, lambda: KV['k19'])
+
+        query = KV.query()
+        self.assertEqual(query.count(), 18)
+
+        query = query.filter(KV.value.contains_any_exact(['v4', 'v1', 'v3']))
+        self.assertEqual(query.order_by(KV.status.desc()).execute(),
+                         ['k4', 'k3', 'k1'])
+
+        query = (KV.query()
+                 .filter(KV.status.between([12, 15]))
+                 .order_by(KV.value))
+        self.assertEqual(query.execute(), ['k12', 'k13', 'k14', 'k15'])
 
 
 if __name__ == '__main__':

@@ -513,7 +513,7 @@ class QueryBuilder(object):
         if self._limit is not None or self._offset is not None:
             cmd.append(('setlimit', self._limit or 1 << 31, self._offset or 0))
         if operation:
-            cmd.append(operation)
+            cmd.append((operation,))
         return cmd
 
     def search(self, client):
@@ -521,3 +521,6 @@ class QueryBuilder(object):
 
     def delete(self, client):
         return client.search(self.build_search(b'out'))
+
+    def count(self, client):
+        return int(client.search(self.build_search(b'count'))[0])
