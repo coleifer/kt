@@ -711,6 +711,10 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         self.assertTrue(KV.delete_list(['k1', 'kx', 'k4', 'k3']))
         self.assertEqual(len(self.db), 1)
 
+        data = KV.all()
+        self.assertEqual(len(data), 1)
+        assertModel(data[0], 2)
+
     def test_model_field_types(self):
         class T(self.Base):
             bytes_field = BytesField()

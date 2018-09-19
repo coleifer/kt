@@ -283,7 +283,7 @@ class Model(_with_metaclass(BaseModel)):
 
     @classmethod
     def all(cls):
-        return cls.get_list(cls.__database__.keys())
+        return cls.get_list(list(cls.__database__.keys()))
 
     @classmethod
     def query(cls):
