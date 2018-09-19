@@ -619,19 +619,26 @@ from kt.models import Model
 from kt.models import TextField
 
 
-class TestTokyoTyrantModels(BaseTestCase):
+class BaseModelTestCase(BaseTestCase):
     server = EmbeddedTokyoTyrantServer
     server_kwargs = {'database': '/tmp/kt_tt.tct', 'serializer': KT_NONE}
 
+    def setUp(self):
+        super(BaseModelTestCase, self).setUp()
+        class Base(Model):
+            __database__ = self.db
+        self.Base = Base
+
     @classmethod
     def tearDownClass(cls):
-        super(TestTokyoTyrantModels, cls).tearDownClass()
+        super(BaseModelTestCase, cls).tearDownClass()
         if os.path.exists(cls.server_kwargs['database']):
             os.unlink(cls.server_kwargs['database'])
 
+
+class TestTokyoTyrantModels(BaseModelTestCase):
     def test_basic_crud_apis(self):
-        class User(Model):
-            __database__ = self.db
+        class User(self.Base):
             name = TextField()
             dob = TextField()
             status = IntegerField()
@@ -665,9 +672,42 @@ class TestTokyoTyrantModels(BaseTestCase):
         u4_db.delete()
         self.assertRaises(KeyError, lambda: User['u4'])
 
+    def test_model_apis(self):
+        class KV(self.Base):
+            value = TextField()
+            status = IntegerField()
+
+        data = [('k1', 'v1', 1),
+                ('k2', 'v2', 2),
+                ('k3', 'v3', 3),
+                ('k4', 'v4', 4)]
+
+        # Test creation via setitem with dict.
+        for key, value, status in data:
+            KV[key] = {'value': value, 'status': status}
+
+        def assertModel(model, num):
+            self.assertEqual(model.key, 'k%s' % num)
+            self.assertEqual(model.value, 'v%s' % num)
+            self.assertEqual(model.status, num)
+
+        # Test data was stored correctly, retrieving using get and getitem.
+        assertModel(KV.get('k2'), 2)
+        assertModel(KV['k3'], 3)
+
+        # Test bulk-get.
+        data = KV.get_list(['k1', 'xx', 'k4', 'kx', 'k3'])
+        self.assertEqual(len(data), 3)
+        assertModel(data[0], 1)
+        assertModel(data[1], 4)
+        assertModel(data[2], 3)
+
+        # Test bulk-delete.
+        self.assertTrue(KV.delete_list(['k1', 'kx', 'k4', 'k3']))
+        self.assertEqual(len(self.db), 1)
+
     def test_model_field_types(self):
-        class T(Model):
-            __database__ = self.db
+        class T(self.Base):
             bytes_field = BytesField()
             text_field = TextField()
             int_field = IntegerField()
@@ -692,6 +732,8 @@ class TestTokyoTyrantModels(BaseTestCase):
         self.assertTrue(t2.int_field is None)
         self.assertTrue(t2.float_field is None)
 
+
+class TestTokyoTyrantQuery(BaseModelTestCase):
     def test_query(self):
         class User(Model):
             __database__ = self.db

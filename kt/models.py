@@ -141,17 +141,27 @@ class BaseModel(type):
         return model_class
 
     def __getitem__(self, key):
-        data = self.__database__.get(key)
-        if data is None:
-            raise KeyError(key)
-        return deserialize_into_model(self, key, data)
+        if isinstance(key, (list, tuple, set)):
+            return self.get_list(key)
+        else:
+            return self.get(key)
 
     def __setitem__(self, key, value):
+        if isinstance(value, dict):
+            value = self(**value)
+
+        if value.key and value.key != key:
+            raise ValueError('Data contains key which does not match key used '
+                             'for setitem.')
+
         _, data = serialize_model(value)
         self.__database__.set(key, data)
 
     def __delitem__(self, key):
-        self.__database__.remove(key)
+        if isinstance(key, (list, tuple, set)):
+            self.__database__.remove_bulk(key)
+        else:
+            self.__database__.remove(key)
 
 
 def _with_metaclass(meta, base=object):
@@ -205,6 +215,12 @@ class Model(_with_metaclass(BaseModel)):
                 default = default()
             setattr(self, field_name, default)
 
+    def __getitem__(self, attr):
+        return getattr(self, attr)
+
+    def __setitem__(self, attr, value):
+        setattr(self, attr, value)
+
     def __repr__(self):
         return '<%s: %s>' % (type(self).__name__, self.key)
 
@@ -248,14 +264,34 @@ class Model(_with_metaclass(BaseModel)):
         return deserialize_into_model(cls, key, data)
 
     @classmethod
-    def get_list(cls, *keys):
+    def get_list(cls, keys):
         data = cls.__database__.get_bulk(keys)
         return [deserialize_into_model(cls, key, data[key])
                 for key in keys if key in data]
 
     @classmethod
+    def create_list(cls, models):
+        accum = {}
+        for model in models:
+            key, data = serialize_model(model)
+            accum[key] = data
+        return cls.__database__.set_bulk(accum)
+
+    @classmethod
+    def delete_list(cls, keys):
+        return cls.__database__.remove_bulk(keys)
+
+    @classmethod
+    def all(cls):
+        return cls.get_list(cls.__database__.keys())
+
+    @classmethod
     def query(cls):
         return ModelSearch(cls)
+
+    @classmethod
+    def count(cls):
+        return cls.query().count()
 
 
 def clone_query(method):
@@ -319,8 +355,11 @@ class ModelSearch(object):
     def execute(self):
         return self._model.__database__.search(self._build_search())
 
-    def delete(self, client):
+    def delete(self):
         return self._model.__database__.search(self._build_search(b'out'))
+
+    def count(self):
+        return self._model.__database__.search(self._build_search(b'count'))
 
     def __iter__(self):
         return iter(self.execute())
