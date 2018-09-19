@@ -612,5 +612,46 @@ class TestTokyoTyrantSearch(BaseTestCase):
         self.assertTrue(self.db.delete_index('name'))
 
 
+from kt.models import BytesField
+from kt.models import FloatField
+from kt.models import IntegerField
+from kt.models import Model
+from kt.models import TextField
+
+
+class TestTokyoTyrantModels(BaseTestCase):
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {'database': '/tmp/kt_tt.tct', 'serializer': KT_NONE}
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestTokyoTyrantModels, cls).tearDownClass()
+        if os.path.exists(cls.server_kwargs['database']):
+            os.unlink(cls.server_kwargs['database'])
+
+    def test_model_simple(self):
+        class User(Model):
+            __database__ = self.db
+            name = TextField()
+            dob = TextField()
+            status = IntegerField()
+
+        User.create('u1', name='charlie', dob='1983-01-01', status=1)
+        User.create('u2', name='huey', dob='2011-08-01', status=2)
+        User.create('u3', name='mickey', dob='2009-05-01', status=3)
+
+        u = User['u1']
+        self.assertEqual(u.name, 'charlie')
+        self.assertEqual(u.dob, '1983-01-01')
+        self.assertEqual(u.status, 1)
+
+        u = User['u3']
+        self.assertEqual(u.name, 'mickey')
+        self.assertEqual(u.dob, '2009-05-01')
+        self.assertEqual(u.status, 3)
+
+        self.assertRaises(KeyError, lambda: User['u4'])
+
+
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)
