@@ -702,6 +702,11 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         assertModel(data[1], 4)
         assertModel(data[2], 3)
 
+        data = KV['k4', 'xx', 'k2']
+        self.assertEqual(len(data), 2)
+        assertModel(data[0], 4)
+        assertModel(data[1], 2)
+
         # Test bulk-delete.
         self.assertTrue(KV.delete_list(['k1', 'kx', 'k4', 'k3']))
         self.assertEqual(len(self.db), 1)
