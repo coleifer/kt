@@ -612,11 +612,7 @@ class TestTokyoTyrantSearch(BaseTestCase):
         self.assertTrue(self.db.delete_index('name'))
 
 
-from kt.models import BytesField
-from kt.models import FloatField
-from kt.models import IntegerField
-from kt.models import Model
-from kt.models import TextField
+from kt.models import *
 
 
 class BaseModelTestCase(BaseTestCase):
@@ -724,16 +720,26 @@ class TestTokyoTyrantModels(BaseModelTestCase):
             text_field = TextField()
             int_field = IntegerField()
             float_field = FloatField()
+            dt_field = DateTimeField()
+            d_field = DateField()
+            ts_field = TimestampField()
 
         # All values are stored/retrieved correctly.
+        dt = datetime.datetime(2018, 1, 2, 3, 4, 5, 6789)
+        d = datetime.date(2018, 12, 25)
+
         T.create(key='t1', bytes_field=b'\xfftest\xff', text_field='test',
-                 int_field=7, float_field=3.14)
+                 int_field=7, float_field=3.14, dt_field=dt, d_field=d,
+                 ts_field=dt)
         t1 = T['t1']
         self.assertEqual(t1.key, 't1')
         self.assertEqual(t1.bytes_field, b'\xfftest\xff')
         self.assertEqual(t1.text_field, 'test')
         self.assertEqual(t1.int_field, 7)
         self.assertEqual(t1.float_field, 3.14)
+        self.assertEqual(t1.dt_field, dt)
+        self.assertEqual(t1.d_field, d)
+        self.assertEqual(t1.ts_field, dt)
 
         # All blank fields works correctly.
         T.create(key='t2')
@@ -743,6 +749,9 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         self.assertTrue(t2.text_field is None)
         self.assertTrue(t2.int_field is None)
         self.assertTrue(t2.float_field is None)
+        self.assertTrue(t2.dt_field is None)
+        self.assertTrue(t2.d_field is None)
+        self.assertTrue(t2.ts_field is None)
 
 
 class TestTokyoTyrantQuery(BaseModelTestCase):
@@ -814,6 +823,35 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
                  .filter(KV.status != 10)
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k8'])
+
+    def test_query_dates_times(self):
+        class Event(self.Base):
+            dt = DateTimeField(index=True)
+            ts = TimestampField(index=True)
+
+        data = [
+            (datetime.datetime(2018, 1, 2, 3, 4, 5, 6789), 'e1'),
+            (datetime.datetime(2018, 1, 3, 2, 0, 0, 0), 'e2'),
+            (datetime.datetime(2018, 2, 1, 0, 0, 0, 0), 'e3'),
+            (datetime.datetime(2018, 12, 1, 0, 0, 0, 0), 'e4')]
+        for dt, key in data:
+            Event.create(key=key, dt=dt, ts=dt)
+
+        def assertMessages(filter_condition, expected):
+            query = Event.query().filter(filter_condition).order_by(Event.dt)
+            self.assertEqual(query.execute(), expected)
+
+        assertMessages(Event.dt.startswith('2018-01'), ['e1', 'e2'])
+        assertMessages(Event.dt.endswith('000000'), ['e2', 'e3', 'e4'])
+        assertMessages(Event.dt.contains('01-02'), ['e1'])
+
+        def D(y=2018, m=1, d=1, H=0, M=0, S=0, f=0):
+            return datetime.datetime(y, m, d, H, M, S, f)
+        assertMessages(Event.ts < D(m=2), ['e1', 'e2'])
+        assertMessages(Event.ts > D(m=2), ['e4'])
+        assertMessages(Event.ts == D(m=2), ['e3'])
+        assertMessages(Event.ts != D(m=2), ['e1', 'e2', 'e4'])
+        assertMessages(Event.ts.between([D(d=3), D(m=3)]), ['e2', 'e3'])
 
 
 if __name__ == '__main__':

@@ -1,6 +1,10 @@
 from collections import namedtuple
 from copy import deepcopy
+import calendar
+import datetime
 import io
+import sys
+import time
 
 from kt import constants as C
 from kt.client import KT_NONE
@@ -8,6 +12,12 @@ from kt.client import QueryBuilder
 from kt.client import TokyoTyrant
 from kt.client import decode
 from kt.client import encode
+
+
+if sys.version_info[0] == 2:
+    string_type = (str, unicode)
+else:
+    string_type = str
 
 
 class TableDatabase(TokyoTyrant):
@@ -83,6 +93,24 @@ class TextField(BytesField):
         return encode(value)
 
 
+class DateTimeField(BytesField):
+    _format = '%Y-%m-%dT%H:%M:%S.%f'
+
+    def deserialize(self, raw_value):
+        return datetime.datetime.strptime(decode(raw_value), self._format)
+
+    def serialize(self, value):
+        return encode(value.strftime(self._format))
+
+
+class DateField(DateTimeField):
+    _format = '%Y-%m-%d'
+
+    def deserialize(self, raw_value):
+        dt = datetime.datetime.strptime(decode(raw_value), self._format)
+        return dt.date()
+
+
 class IntegerField(Field):
     _index_type = C.INDEX_NUM
     _order_asc = C.ORDER_NUM_ASC
@@ -107,6 +135,36 @@ class IntegerField(Field):
 class FloatField(IntegerField):
     def deserialize(self, raw_value):
         return float(decode(raw_value))
+
+
+class TimestampField(IntegerField):
+    def __init__(self, utc=True, *args, **kwargs):
+        self._utc = utc
+        super(TimestampField, self).__init__(*args, **kwargs)
+
+    def deserialize(self, raw_value):
+        num = int(decode(raw_value))
+        ts, microsecond = divmod(num, 1000000)
+        if self._utc:
+            dt = datetime.datetime.utcfromtimestamp(ts)
+        else:
+            dt = datetime.datetime.fromtimestamp(ts)
+        return dt.replace(microsecond=microsecond)
+
+    def serialize(self, value):
+        if isinstance(value, datetime.datetime):
+            pass  # Note: date is a subclass of datetime.
+        elif isinstance(value, datetime.date):
+            value = datetime.datetime(value.year, value.month, value.day)
+        elif isinstance(value, int):
+            return encode(str(value * 1000000))
+
+        if self._utc:
+            timestamp = calendar.timegm(value.utctimetuple())
+        else:
+            timestamp = time.mktime(value.timetuple())
+        timestamp = (timestamp * 1000000) + value.microsecond
+        return encode(str(timestamp))
 
 
 class BaseModel(type):
@@ -321,8 +379,12 @@ class ModelSearch(object):
     def filter(self, *expressions):
         for (field, op, value) in expressions:
             if isinstance(value, (list, set, tuple)):
-                items = [field.serialize(item) for item in value]
+                items = [(field.serialize(item)
+                          if not isinstance(item, string_type)
+                          else item) for item in value]
                 value = b','.join(items)
+            elif isinstance(value, string_type):
+                value = encode(value)
             else:
                 value = field.serialize(value)
             self._conditions.append((field.name, op, value))
