@@ -808,21 +808,80 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
         query = KV.query()
         self.assertEqual(query.count(), 18)
 
-        query = query.filter(KV.value.contains_any_exact(['v4', 'v1', 'v3']))
+        query = query.filter(KV.value.contains_any_exact('v4', 'v1', 'v3'))
         self.assertEqual(query.order_by(KV.status.desc()).execute(),
                          ['k4', 'k3', 'k1'])
 
         query = (KV.query()
-                 .filter(KV.status.between([12, 15]))
+                 .filter(KV.status.between(12, 15))
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k13', 'k14', 'k15'])
 
         query = (KV.query()
-                 .filter(KV.status.matches_any([8, 10, 11, 12]))
+                 .filter(KV.status.matches_any(8, 10, 11, 12))
                  .filter(KV.value != 'v11')
                  .filter(KV.status != 10)
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k8'])
+
+    def test_special_string_ops(self):
+        class KV(self.Base):
+            value = TextField()
+
+        KV['k1'] = {'value': 'baz zoo bar'}
+        KV['k2'] = {'value': 'foo bar baz'}
+        KV['k3'] = {'value': 'nug baze zoo'}
+
+        def assertQuery(expression, expected):
+            query = KV.query().filter(expression).order_by(KV.value)
+            self.assertEqual(query.execute(), expected)
+
+        assertQuery(KV.value.regex('^baz'), ['k1'])
+        assertQuery(KV.value.regex('zoo$'), ['k3'])
+        assertQuery(KV.value.regex('zoo'), ['k1', 'k3'])
+        assertQuery(KV.value.regex('baze?'), ['k1', 'k2', 'k3'])
+        assertQuery(KV.value.regex('[bf]o{2}'), ['k2'])
+        assertQuery(KV.value.regex('ba.e'), ['k3'])
+
+        assertQuery(KV.value.contains('zoo'), ['k1', 'k3'])
+        assertQuery(KV.value.contains('baze'), ['k3'])
+        assertQuery(KV.value.contains('nugget'), [])
+
+        assertQuery(KV.value.startswith('ba'), ['k1'])
+        assertQuery(KV.value.startswith('foox'), [])
+        assertQuery(KV.value.endswith('oo'), ['k3'])
+
+        assertQuery(KV.value.contains_all('bar', 'baz'), ['k1', 'k2'])
+        assertQuery(KV.value.contains_all('zoo', 'baz'), ['k1'])
+        assertQuery(KV.value.contains_all('o', 'bar'), [])
+
+        assertQuery(KV.value.contains_any('bar', 'baz'), ['k1', 'k2'])
+        assertQuery(KV.value.contains_any('zoo', 'baz'), ['k1', 'k2', 'k3'])
+        assertQuery(KV.value.contains_any_exact('bar', 'baz'), [])
+
+    def test_int_ops(self):
+        class KV(self.Base):
+            value = IntegerField()
+
+        for i in range(20):
+            KV['k%s' % i] = {'value': i}
+
+        def assertQuery(expression, expected):
+            query = KV.query().filter(expression).order_by(KV.value)
+            self.assertEqual(query.execute(), expected)
+
+        assertQuery(KV.value == 9, ['k9'])
+        assertQuery(KV.value < 2, ['k0', 'k1'])
+        assertQuery(KV.value <= 2, ['k0', 'k1', 'k2'])
+        assertQuery(KV.value > 17, ['k18', 'k19'])
+        assertQuery(KV.value >= 17, ['k17', 'k18', 'k19'])
+        assertQuery(KV.value < 0, [])
+        assertQuery(KV.value > 19, [])
+        assertQuery(KV.value.between(8, 11), ['k8', 'k9', 'k10', 'k11'])
+        assertQuery(KV.value.between(18, 999), ['k18', 'k19'])
+        assertQuery(KV.value.between(-10, 2), ['k0', 'k1', 'k2'])
+        assertQuery(KV.value.matches_any(10, 0, 99, 18), ['k0', 'k10', 'k18'])
+        assertQuery(KV.value.matches_any(100, -1, -0), ['k0'])
 
     def test_query_dates_times(self):
         class Event(self.Base):
@@ -851,7 +910,7 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
         assertMessages(Event.ts > D(m=2), ['e4'])
         assertMessages(Event.ts == D(m=2), ['e3'])
         assertMessages(Event.ts != D(m=2), ['e1', 'e2', 'e4'])
-        assertMessages(Event.ts.between([D(d=3), D(m=3)]), ['e2', 'e3'])
+        assertMessages(Event.ts.between(D(d=3), D(m=3)), ['e2', 'e3'])
 
 
 if __name__ == '__main__':

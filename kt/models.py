@@ -71,6 +71,10 @@ def _e(op):
     def inner(self, rhs):
         return Expression(self, op, rhs)
     return inner
+def _me(op):
+    def inner(self, *rhs):
+        return Expression(self, op, rhs)
+    return inner
 
 
 class BytesField(Field):
@@ -79,9 +83,9 @@ class BytesField(Field):
     contains = _e(C.OP_STR_CONTAINS)
     startswith = _e(C.OP_STR_STARTSWITH)
     endswith = _e(C.OP_STR_ENDSWITH)
-    contains_all = _e(C.OP_STR_ALL)
-    contains_any = _e(C.OP_STR_ANY)
-    contains_any_exact = _e(C.OP_STR_ANYEXACT)
+    contains_all = _me(C.OP_STR_ALL)
+    contains_any = _me(C.OP_STR_ANY)
+    contains_any_exact = _me(C.OP_STR_ANYEXACT)
     regex = _e(C.OP_STR_REGEX)
 
 
@@ -122,8 +126,8 @@ class IntegerField(Field):
     __ge__ = _e(C.OP_NUM_GE)
     __lt__ = _e(C.OP_NUM_LT)
     __le__ = _e(C.OP_NUM_LE)
-    between = _e(C.OP_NUM_BETWEEN)
-    matches_any = _e(C.OP_NUM_ANYEXACT)
+    between = _me(C.OP_NUM_BETWEEN)  # Includes both endpoints.
+    matches_any = _me(C.OP_NUM_ANYEXACT)
 
     def deserialize(self, raw_value):
         return int(decode(raw_value))
@@ -381,7 +385,7 @@ class ModelSearch(object):
             if isinstance(value, (list, set, tuple)):
                 items = [(field.serialize(item)
                           if not isinstance(item, string_type)
-                          else item) for item in value]
+                          else encode(item)) for item in value]
                 value = b','.join(items)
             elif isinstance(value, string_type):
                 value = encode(value)
