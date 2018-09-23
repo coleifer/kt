@@ -631,6 +631,15 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         return self.response().check_error() == 0
 
+    def putnr(self, key, value):
+        cdef:
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x18')
+         .write_key_value(key, value)
+         .send())
+
     def out(self, key):
         cdef:
             RequestBuffer request = self.request()
@@ -781,6 +790,52 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         self.request().write_magic(b'\xc8\x70').send()
         return self.response().check_error() == 0
 
+    def optimize(self, options):
+        cdef bytes boptions = _encode(options)
+
+        (self.request()
+         .write_magic(b'\xc8\x71')
+         .write_bytes(boptions, True)
+         .send())
+        return self.response().check_error() == 0
+
+    def vanish(self):
+        self.request().write_magic(b'\xc8\x72').send()
+        return self.response().check_error() == 0
+
+    def copy(self, path):
+        cdef bytes bpath = _encode(path)
+
+        (self.request()
+         .write_magic(b'\xc8\x73')
+         .write_bytes(bpath, True)
+         .send())
+        return self.response().check_error() == 0
+
+    def restore(self, path, timestamp, opts=0):
+        cdef bytes bpath = _encode(path)
+
+        (self.request()
+         .write_magic(b'\xc8\x74')
+         .write_int(len(bpath))
+         .write_long(timestamp)
+         .write_int(opts)
+         .write_bytes(bpath, False)
+         .send())
+        return self.response().check_error() == 0
+
+    def set_master(self, host, port, timestamp, opts=0):
+        cdef bytes bhost = _encode(host)
+
+        (self.request()
+         .write_magic(b'\xc8\x78')
+         .write_ints((len(bhost), port))
+         .write_long(timestamp)
+         .write_int(opts)
+         .write_bytes(bhost, False)
+         .send())
+        return self.response().check_error() == 0
+
     def misc(self, name, keys=None, data=None, update_log=True, _cmd=None):
         cdef:
             int opts = 0 if update_log else 1
@@ -806,7 +861,6 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             name = 'outlist'
 
         cdef:
-            bint is_put = False
             bytes bkey, bval
             bytes bname = _encode(name)
             int nargs
@@ -869,10 +923,6 @@ cdef class TTBinaryProtocol(BinaryProtocol):
                 value = response.read_value()
                 accum[key] = value
             return accum
-
-    def vanish(self):
-        self.request().write_magic(b'\xc8\x72').send()
-        return self.response().check_error() == 0
 
     def _long_cmd(self, bytes bmagic):
         self.request().write_magic(bmagic).send()

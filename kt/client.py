@@ -355,6 +355,12 @@ class TokyoTyrant(BaseClient):
     def append(self, key, value):
         return self._protocol.putcat(key, value)
 
+    def addshl(self, key, value, width):
+        return self._protocol.putshl(key, value, width)
+
+    def setnr(self, key, value):
+        self._protocol.putnr(key, value)
+
     def get_part(self, key, start=None, end=None):
         params = [key]
         if start is not None or end is not None:
@@ -403,13 +409,27 @@ class TokyoTyrant(BaseClient):
 
     @property
     def error(self):
-        return self._protocol.misc('error', [])
+        code, msg = self._protocol.misc('error').split(': ', 1)
+        return int(code), msg
 
-    def optimize(self):
-        return self._protocol.misc('optimize', [])
+    def optimize(self, options):
+        return self._protocol.optimize(options)
 
     def synchronize(self):
         return self._protocol.sync()
+
+    def copy(self, path):
+        return self._protocol.copy(path)
+
+    def restore(self, path, timestamp, options=0):
+        if isinstance(timestamp, datetime.datetime):
+            timestamp = int(timestamp.timestamp())
+        return self._protocol.restore(path, timestamp, options)
+
+    def set_master(self, host, port, timestamp, options=0):
+        if isinstance(timestamp, datetime.datetime):
+            timestamp = int(timestamp.timestamp())
+        return self._protocol.set_master(host, port, timestamp, options)
 
     def clear_cache(self):
         return self._protocol.misc('cacheclear', [])

@@ -431,6 +431,10 @@ class TokyoTyrantTests(object):
         del self.db['k3']
         self.assertEqual(sorted(list(self.db.keys())), ['k2', 'key'])
 
+        self.db.setnr('k1', 'v1x')
+        self.assertEqual(self.db['k1'], 'v1x')
+        del self.db['k1']
+
         # Test matching.
         self.assertEqual(sorted(self.db.match_prefix('k')), ['k2', 'key'])
         self.assertEqual(self.db.match_regex('k[0-9]'), {'k2': 'v2'})
