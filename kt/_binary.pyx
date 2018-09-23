@@ -714,17 +714,27 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if not response.check_error():
             return response.read_double()
 
-    def script(self, name, key=None, value=None):
+    def script(self, name, key=None, value=None, lock_records=False,
+               lock_all=False):
         cdef:
             bytes bname = _encode(name)
             bytes bkey = _encode(key or '')
             bytes bval = self.encode_value(value or '')
+            int opts = 0
             RequestBuffer request = self.request()
             TTResponseHandler response
 
+        if lock_records and lock_all:
+            raise ValueError('cannot specify both record and global locking.')
+
+        if lock_records:
+            opts = 1
+        elif lock_all:
+            opts = 2
+
         (request
          .write_magic(b'\xc8\x68')
-         .write_ints((len(bname), 0, len(bkey), len(bval)))
+         .write_ints((len(bname), opts, len(bkey), len(bval)))
          .write_bytes(bname, False)
          .write_bytes(bkey, False)
          .write_bytes(bval, False)
@@ -771,8 +781,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         self.request().write_magic(b'\xc8\x70').send()
         return self.response().check_error() == 0
 
-    def misc(self, name, keys=None, data=None, _cmd=None):
+    def misc(self, name, keys=None, data=None, update_log=True, _cmd=None):
         cdef:
+            int opts = 0 if update_log else 1
             int rv
             RequestBuffer request = self.request()
             TTResponseHandler response
@@ -808,7 +819,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         (request
          .write_magic(b'\xc8\x90')
-         .write_ints((len(bname), 0, nargs))
+         .write_ints((len(bname), opts, nargs))
          .write_bytes(bname, False))
 
         if bname.startswith(b'put'):

@@ -375,8 +375,8 @@ class TokyoTyrant(BaseClient):
     def incr_double(self, key, n=1.):
         return self._protocol.adddouble(key, n)
 
-    def misc(self, cmd, keys=None, data=None):
-        return self._protocol.misc(cmd, keys, data)
+    def misc(self, cmd, keys=None, data=None, update_log=True):
+        return self._protocol.misc(cmd, keys, data, update_log)
 
     def __getitem__(self, item):
         if isinstance(item, slice):

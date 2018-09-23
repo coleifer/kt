@@ -452,7 +452,7 @@ class TokyoTyrantTests(object):
         self.db.set_bulk({'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
         self.assertEqual(self.db.misc('get', 'k1'), 'v1')
         self.assertEqual(self.db.misc('get', 'k3'), 'v3')
-        self.assertTrue(self.db.misc('get', 'kx') is False)
+        self.assertFalse(self.db.misc('get', 'kx'))
         self.assertTrue(self.db.misc('out', 'k1'))
         self.assertFalse(self.db.misc('out', 'k1'))
         self.assertTrue(self.db.misc('put', data={'k1': 'v1-x'}))
@@ -478,6 +478,12 @@ class TokyoTyrantTests(object):
         self.assertFalse(self.db.misc('out', ['k1']))  # Returns true/false.
         self.assertTrue(self.db.misc('putlist', data={}))  # Always true.
         self.assertFalse(self.db.misc('put', data={}))  # Returns true/false.
+
+    def test_misc_noulog(self):
+        self.db.misc('putlist', data={'k1': 'v1', 'k2': 'v2'}, update_log=0)
+        self.assertEqual(self.db.misc('get', 'k1', update_log=0), 'v1')
+        self.assertEqual(self.db.misc('get', 'k2', update_log=0), 'v2')
+        self.assertFalse(self.db.misc('get', 'k3', update_log=0))
 
 
 class TestTokyoTyrantHash(TokyoTyrantTests, BaseTestCase):
