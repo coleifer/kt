@@ -394,6 +394,9 @@ class TokyoTyrant(BaseClient):
     def __len__(self):
         return self._protocol.rnum()
 
+    def count(self):
+        return self._protocol.rnum()
+
     @property
     def size(self):
         return self._protocol.size()
