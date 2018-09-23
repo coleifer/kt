@@ -259,14 +259,21 @@ def deserialize_into_model(model_class, key, raw_data):
     return model_class(**data)
 
 
+class KeyField(TextField):
+    def __set__(self, instance, value):
+        instance.__data__[self.name] = value
+        instance.__key__ = value
+
+
 class Model(_with_metaclass(BaseModel)):
     __database__ = None
 
     # Key is used to indicate the key in which the model data is stored.
-    key = TextField()
+    key = KeyField()
 
     def __init__(self, **kwargs):
         self.__data__ = {}
+        self.__key__ = None
         self._load_default_dict()
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -408,25 +415,29 @@ class ModelSearch(object):
     def offset(self, offset=None):
         self._offset = offset
 
-    def _build_search(self, operation=None):
+    def _build_search(self):
         cmd = [('addcond', col, op, val) for col, op, val in self._conditions]
         for col, order in self._order_by:
             cmd.append(('setorder', col, order))
         if self._limit is not None or self._offset is not None:
             cmd.append(('setlimit', self._limit or 1 << 31, self._offset or 0))
-        if operation:
-            cmd.append((operation,))
         return cmd
 
     def execute(self):
         return self._model.__database__.search(self._build_search())
 
     def delete(self):
-        return self._model.__database__.search(self._build_search(b'out'))
+        return self._model.__database__.search(self._build_search(), b'out')
+
+    def get(self):
+        accum = []
+        results = self._model.__database__.search(self._build_search(), b'get')
+        for key, data in results:
+            accum.append(deserialize_into_model(self._model, key, data))
+        return accum
 
     def count(self):
-        res = self._model.__database__.search(self._build_search(b'count'))
-        return int(res[0])
+        return self._model.__database__.search(self._build_search(), b'count')
 
     def __iter__(self):
         return iter(self.execute())

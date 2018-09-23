@@ -577,20 +577,30 @@ class TestTokyoTyrantSearch(BaseTestCase):
         query = (QueryBuilder()
                  .filter('type', constants.OP_STR_EQ, 'cat')
                  .order_by('name', constants.ORDER_STR_DESC))
-        self.assertEqual(query.search(self.db), ['zaizee', 'huey'])
+        self.assertEqual(query.execute(self.db), ['zaizee', 'huey'])
 
         query = (QueryBuilder()
                  .filter('age', constants.OP_NUM_GE, '7')
                  .filter('type', constants.OP_STR_ANY, 'human,cat')
                  .order_by('age', constants.ORDER_NUM_DESC))
-        self.assertEqual(query.search(self.db),
+        self.assertEqual(query.execute(self.db),
                          ['charlie', 'leslie', 'huey'])
 
         query = (QueryBuilder()
                  .order_by('name', constants.ORDER_STR_DESC)
                  .limit(3)
                  .offset(1))
-        self.assertEqual(query.search(self.db), ['mickey', 'leslie', 'huey'])
+        self.assertEqual(query.execute(self.db), ['mickey', 'leslie', 'huey'])
+
+    def test_search_get(self):
+        query = (QueryBuilder()
+                 .filter('type', constants.OP_STR_EQ, 'cat')
+                 .order_by('name', constants.ORDER_STR_DESC))
+        self.assertEqual(query.get(self.db), [
+            ('zaizee', {'name': 'zaizee', 'type': 'cat', 'age': '5',
+                        'eyes': 'blue'}),
+            ('huey', {'name': 'huey', 'type': 'cat', 'age': '7',
+                      'eyes': 'blue'})])
 
     def test_indexing(self):
         self.assertTrue(self.db.set_index('name', constants.INDEX_STR))
@@ -606,7 +616,7 @@ class TestTokyoTyrantSearch(BaseTestCase):
                  .order_by('name', constants.ORDER_STR_DESC)
                  .limit(3)
                  .offset(1))
-        self.assertEqual(query.search(self.db), ['mickey', 'huey', 'connor'])
+        self.assertEqual(query.execute(self.db), ['mickey', 'huey', 'connor'])
 
         # Verify we can delete an index.
         self.assertTrue(self.db.delete_index('name'))
@@ -823,6 +833,31 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
                  .filter(KV.status != 10)
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k8'])
+
+    def test_query_get(self):
+        class KV(self.Base):
+            value = TextField()
+            status = IntegerField(index=True)
+
+        KV.create_list([KV(key='k%s' % i, value='v%s' % i, status=i)
+                        for i in range(5)])
+        KV.create_indexes()
+
+        query = (KV.query()
+                 .filter(KV.status < 3)
+                 .order_by(KV.status.desc()))
+        self.assertEqual([(k.key, k.value, k.status) for k in query.get()], [
+            ('k2', 'v2', 2),
+            ('k1', 'v1', 1),
+            ('k0', 'v0', 0)])
+
+        query = (KV.query()
+                 .filter(KV.value.contains_any('v4', 'v1', 'v3'))
+                 .order_by(KV.value))
+        self.assertEqual([(k.key, k.value, k.status) for k in query.get()], [
+            ('k1', 'v1', 1),
+            ('k3', 'v3', 3),
+            ('k4', 'v4', 4)])
 
     def test_special_string_ops(self):
         class KV(self.Base):

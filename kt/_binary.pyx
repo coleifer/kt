@@ -771,7 +771,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         self.request().write_magic(b'\xc8\x70').send()
         return self.response().check_error() == 0
 
-    def misc(self, name, keys=None, data=None):
+    def misc(self, name, keys=None, data=None, _cmd=None):
         cdef:
             int rv
             RequestBuffer request = self.request()
@@ -827,10 +827,26 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         nelem = response.read_int()
 
         if bname == b'search':
-            accum = []
-            for _ in range(nelem):
-                accum.append(response.read_key())
-            return accum
+            if _cmd is None:
+                accum = []
+                for _ in range(nelem):
+                    accum.append(response.read_key())
+                return accum
+            elif _cmd == b'get':
+                accum = []
+                for _ in range(nelem):
+                    raw_data = response.read_bytes()
+                    key, rest = raw_data[1:].split(b'\x00', 1)
+                    accum.append((response.key_decode(key), rest))
+                return accum
+            elif _cmd == b'count':
+                assert nelem == 1, 'Count should always return 1 result.'
+                ival = response.read_bytes()
+                return int(ival.decode('ascii'))
+            elif nelem == 0:
+                return rv == 0
+            else:
+                raise ValueError('Unexpected results for search cmd=%s' % _cmd)
         elif nelem == 0 and bname != b'getlist':
             return rv == 0
         elif nelem == 1:

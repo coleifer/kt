@@ -450,9 +450,11 @@ class TokyoTyrant(BaseClient):
     def delete_index(self, name):
         return self._protocol.misc('setindex', keys=[name, str(IOP_DELETE)])
 
-    def search(self, expressions):
+    def search(self, expressions, cmd=None):
+        if cmd:
+            expressions.append((cmd,))
         keys = [_pack_misc_cmd(*expr) for expr in expressions]
-        return self._protocol.misc('search', keys=keys)
+        return self._protocol.misc('search', keys=keys, _cmd=cmd)
 
     def genuid(self):
         return int(self._protocol.misc('genuid', keys=[]))
@@ -506,21 +508,26 @@ class QueryBuilder(object):
     def offset(self, offset=None):
         self._offset = offset
 
-    def build_search(self, operation=None):
+    def build_search(self):
         cmd = [('addcond', col, op, val) for col, op, val in self._conditions]
         for col, order in self._order_by:
             cmd.append(('setorder', col, order))
         if self._limit is not None or self._offset is not None:
             cmd.append(('setlimit', self._limit or 1 << 31, self._offset or 0))
-        if operation:
-            cmd.append((operation,))
         return cmd
 
-    def search(self, client):
+    def execute(self, client):
         return client.search(self.build_search())
 
     def delete(self, client):
-        return client.search(self.build_search(b'out'))
+        return client.search(self.build_search(), b'out')
+
+    def get(self, client):
+        results = client.search(self.build_search(), b'get')
+        accum = []
+        for key, raw_data in results:
+            accum.append((key, table_to_dict(raw_data)))
+        return accum
 
     def count(self, client):
-        return int(client.search(self.build_search(b'count'))[0])
+        return client.search(self.build_search(), b'count')
