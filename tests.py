@@ -110,6 +110,7 @@ class KyotoTycoonTests(object):
         self.assertTrue('key' in self.db)
         self.assertFalse('other' in self.db)
         self.assertEqual(len(self.db), 1)
+        self.assertEqual(self.db.count(), 1)
         self.db['k1'] = 'v1'
         self.db.update({'k2': 'v2', 'k3': 'v3'})
         self.assertEqual(self.db.pop('k1'), 'v1')
