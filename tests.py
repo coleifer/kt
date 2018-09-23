@@ -834,6 +834,21 @@ class TestTokyoTyrantQuery(BaseModelTestCase):
                  .order_by(KV.value))
         self.assertEqual(query.execute(), ['k12', 'k8'])
 
+    def test_query_all(self):
+        class KV(self.Base):
+            value = IntegerField()
+
+        KV.create_list([KV(key='k%s' % i, value=i) for i in range(4)])
+
+        self.assertEqual(sorted((k.key, k.value) for k in KV.all()), [
+            ('k0', 0),
+            ('k1', 1),
+            ('k2', 2),
+            ('k3', 3)])
+
+        del KV['k2', 'k1']
+        self.assertEqual(sorted(k.value for k in KV.all()), [0, 3])
+
     def test_query_get(self):
         class KV(self.Base):
             value = TextField()
