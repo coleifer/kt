@@ -1,0 +1,26 @@
+cmd,magic,args,response
+put,x10,ksiz:4 vsiz:4 kbuf:* vbuf:*,
+putkeep,x11,ksiz:4 vsiz:4 kbuf:* vbuf:*,
+putcat,x12,ksiz:4 vsiz:4 kbuf:* vbuf:*,
+putshl,x13,ksiz:4 vsiz:4 width:4 kbuf:* vbuf:*,
+putnr,x18,ksiz:4 vsiz:4 kbuf:* vbuf:*,
+out,x20,ksiz:4 kbuf:*,
+get,x30,ksiz:4 kbuf:*,vsiz:4 vbuf:*
+mget,x31,rnum:4 {ksiz:4 kbuf:*},rnum:4 {vsiz:4 vbuf:*}
+vsiz,x38,ksiz:4 kbuf:*,vsiz:4
+iterinit,x50,,
+iternext,x51,,ksiz:4 kbuf:*
+fwmkeys,x58,pfxsiz:4 maxrec:4 pfxbuf:*,rnum:4 {ksiz:4 kbuf:*}
+addint,x60,ksiz:4 num:4 kbuf:*,sum:4
+adddouble,x61,ksiz:4 integer:8 mantissa:8 kbuf:*,sumint:8 summantissa:8
+ext,x68,fnsiz:4 opts:4 ksiz:4 vsiz:4 fnbuf:* kbuf:* vbuf:*,rsiz:4 rbuf:*
+sync,x70,,
+optimize,x71,optsiz:4 optbuf:*,
+vanish,x72,,
+copy,x73,pathsiz:4 pathbuf:*,
+restore,x74,pathsiz:4 tsmicro:8 opts:4 pathbuf:*,
+setmst,x78,hostsiz:4 port:4 tsmicro:8 opts:4 hostbuf:*,
+rnum,x80,,rnum:8
+size,x81,,size:8
+stat,x88,,rsiz:4 rbuf:*
+misc,x90,fnsiz:4 opts:4 argc:4 fnbuf:* {asiz:4 abuf:*},rnum:4 {rsiz:4 rbuf:*}

@@ -1,0 +1,24 @@
+cmd,args,response,description
+put,"key, value",,set key/value
+putkeep,"key, value",,set if not exists
+putcat,"key, value",,append if exists
+putdup,"key, value",,add duplicate to front
+putdupback,"key, value",,add duplicate to back
+out,key,,delete
+get,key,value,get
+putlist,"k1,v1,kn,vn",,set multiple key/value pairs
+outlist,"k1,kn",,delete multiple keys
+getlist,"k1,kn","k1,v1,kn,vn",get multiple key/value pairs
+getpart,"key,start,length",value,get value at offset/length
+iterinit,startkey(opt),,begin iteration
+iternext,,"key,value",step iteration
+sync,,,synchronize changes
+optimize,optionstr,,optimize db
+vanish,,,clear all
+error,,errorstr,get error
+defrag,nsteps(opt),,defragment the database
+regex,"rgx,nrec(opt)","k1,v1,kn,vn",regex search
+range,"upper,nrec,lower","k1,v1,kn,vn",range search
+setindex,"name,type",,create index on column
+search,"cond1,condn","k1,v1,kn,vn",search
+genuid,,id,generate a unique id
