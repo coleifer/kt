@@ -427,17 +427,17 @@ class ModelSearch(object):
         return self._model.__database__.search(self._build_search())
 
     def delete(self):
-        return self._model.__database__.search(self._build_search(), b'out')
+        return self._model.__database__.search(self._build_search(), 'out')
 
     def get(self):
         accum = []
-        results = self._model.__database__.search(self._build_search(), b'get')
+        results = self._model.__database__.search(self._build_search(), 'get')
         for key, data in results:
             accum.append(deserialize_into_model(self._model, key, data))
         return accum
 
     def count(self):
-        return self._model.__database__.search(self._build_search(), b'count')
+        return self._model.__database__.search(self._build_search(), 'count')
 
     def __iter__(self):
         return iter(self.execute())

@@ -17,6 +17,7 @@ except ImportError:
 import time
 
 from kt.exceptions import ProtocolError
+from kt.exceptions import ScriptError
 from kt.exceptions import ServerConnectionError
 from kt.exceptions import ServerError
 
@@ -224,15 +225,12 @@ cdef class SocketPool(object):
 
 cdef class RequestBuffer(object):
     cdef:
-        object key_encode
         object value_encode
         public object buf
         _Socket _socket
 
-    def __init__(self, _Socket socket, key_encode=None,
-                 value_encode=None):
+    def __init__(self, _Socket socket, value_encode=None):
         self._socket = socket
-        self.key_encode = key_encode
         self.value_encode = value_encode
         self.buf = io.BytesIO()
 
@@ -241,20 +239,20 @@ cdef class RequestBuffer(object):
         return self
 
     cdef RequestBuffer write_int(self, int i):
-        self.buf.write(s_pack('!I', i))
+        self.buf.write(s_pack('>I', i))
         return self
 
     cdef RequestBuffer write_ints(self, ints):
         fmt = 'I' * len(ints)
-        self.buf.write(s_pack('!%s' % fmt, *ints))
+        self.buf.write(s_pack('>%s' % fmt, *ints))
         return self
 
     cdef RequestBuffer write_short(self, s):
-        self.buf.write(s_pack('!H', s))
+        self.buf.write(s_pack('>H', s))
         return self
 
     cdef RequestBuffer write_long(self, l):
-        self.buf.write(s_pack('!q', l))
+        self.buf.write(s_pack('>q', l))
         return self
 
     cdef RequestBuffer write_double(self, d):
@@ -273,7 +271,7 @@ cdef class RequestBuffer(object):
         cdef bytes bkey
         self.write_int(len(keys))
         for key in keys:
-            bkey = self.key_encode(key)
+            bkey = _encode(key)
             (self
              .write_short(db)
              .write_bytes(bkey, True))
@@ -284,7 +282,7 @@ cdef class RequestBuffer(object):
         cdef bytes bkey, bval
         self.write_int(len(data))
         for key, value in data.items():
-            bkey = self.key_encode(key)
+            bkey = _encode(key)
             bval = self.value_encode(value)
             (self
              .write_short(db)
@@ -295,13 +293,13 @@ cdef class RequestBuffer(object):
         return self
 
     cdef RequestBuffer write_key(self, key):
-        return self.write_bytes(self.key_encode(key), True)
+        return self.write_bytes(_encode(key), True)
 
     cdef RequestBuffer write_key_list(self, keys):
         cdef bytes bkey
         self.write_int(len(keys))
         for key in keys:
-            bkey = self.key_encode(key)
+            bkey = _encode(key)
             self.write_bytes(bkey, True)
         return self
 
@@ -314,7 +312,7 @@ cdef class RequestBuffer(object):
 
     cdef RequestBuffer write_key_value(self, key, value):
         cdef:
-            bytes bkey = self.key_encode(key)
+            bytes bkey = _encode(key)
             bytes bval = self.value_encode(value)
         return (self
                 .write_ints((len(bkey), len(bval)))
@@ -343,10 +341,10 @@ cdef class BaseResponseHandler(object):
         return value
 
     cdef int read_int(self):
-        return s_unpack('!I', self.read(4))[0]
+        return s_unpack('>I', self.read(4))[0]
 
     cdef int read_long(self):
-        return s_unpack('!q', self.read(8))[0]
+        return s_unpack('>q', self.read(8))[0]
 
     cdef double read_double(self):
         cdef:
@@ -365,6 +363,7 @@ cdef class BaseResponseHandler(object):
 
     cdef list read_keys(self):
         cdef:
+            int i
             int n = self.read_int()
             list accum = []
 
@@ -375,7 +374,7 @@ cdef class BaseResponseHandler(object):
     cdef tuple read_key_value(self):
         cdef:
             int klen, vlen
-        klen, vlen = s_unpack('!II', self.read(8))
+        klen, vlen = s_unpack('>II', self.read(8))
         return (self.key_decode(self.read(klen)),
                 self.value_decode(self.read(vlen)))
 
@@ -394,7 +393,7 @@ cdef class BaseResponseHandler(object):
         cdef:
             int klen, vlen
 
-        _, klen, vlen, _ = s_unpack('!HIIq', self.read(18))
+        _, klen, vlen, _ = s_unpack('>HIIq', self.read(18))
         return (self.key_decode(self.read(klen)),
                 self.value_decode(self.read(vlen)))
 
@@ -479,7 +478,6 @@ cdef class BinaryProtocol(object):
     cdef RequestBuffer request(self):
         return RequestBuffer(
             self._socket_pool.checkout(),
-            encode,
             self.encode_value)
 
 
@@ -598,13 +596,13 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             self.decode_value)
 
     cdef _key_value_cmd(self, key, value, bytes bmagic):
-        cdef:
-            RequestBuffer request = self.request()
+        cdef RequestBuffer request = self.request()
 
         (request
          .write_magic(bmagic)
          .write_key_value(key, value)
          .send())
+
         return self.response().check_error()
 
     def put(self, key, value):
@@ -632,8 +630,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return self.response().check_error() == 0
 
     def putnr(self, key, value):
-        cdef:
-            RequestBuffer request = self.request()
+        cdef RequestBuffer request = self.request()
 
         (request
          .write_magic(b'\xc8\x18')
@@ -641,8 +638,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .send())
 
     def out(self, key):
-        cdef:
-            RequestBuffer request = self.request()
+        cdef RequestBuffer request = self.request()
 
         (request
          .write_magic(b'\xc8\x20')
@@ -655,16 +651,12 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             RequestBuffer request = self.request()
             TTResponseHandler response
 
-        (request
-         .write_magic(b'\xc8\x30')
-         .write_key(key)
-         .send())
-
+        request.write_magic(b'\xc8\x30').write_key(key).send()
         response = self.response()
         if not response.check_error():
             return response.read_value()
 
-    def get_bulk(self, keys):
+    def mget(self, keys):
         cdef:
             RequestBuffer request = self.request()
             TTResponseHandler response
@@ -690,6 +682,41 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         response = self.response()
         if not response.check_error():
             return response.read_int()
+
+    cdef _simple_command(self, bytes bmagic):
+        cdef RequestBuffer request = self.request()
+        request.write_magic(bmagic).send()
+        return self.response().check_error() == 0
+
+    def iterinit(self):
+        return self._simple_command(b'\xc8\x50')
+
+    def iternext(self):
+        cdef:
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        request.write_magic(b'\xc8\x51').send()
+        response = self.response()
+        if not response.check_error():
+            return response.read_key()
+
+    def fwmkeys(self, prefix, max_keys=1024):
+        cdef:
+            bytes bprefix = _encode(prefix)
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        # fwmkeys method.
+        (request
+         .write_magic(b'\xc8\x58')
+         .write_ints((len(bprefix), max_keys))
+         .write_bytes(bprefix, False)
+         .send())
+
+        response = self.response()
+        if not response.check_error():
+            return response.read_keys()
 
     def addint(self, key, value):
         cdef:
@@ -723,7 +750,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if not response.check_error():
             return response.read_double()
 
-    def script(self, name, key=None, value=None, lock_records=False,
+    def ext(self, name, key=None, value=None, lock_records=False,
                lock_all=False):
         cdef:
             bytes bname = _encode(name)
@@ -750,8 +777,278 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .send())
 
         response = self.response()
+        if response.check_error():
+            raise ScriptError('error calling %s(%s, %s)' % (name, key, value))
+
+        return response.read_bytes()
+
+    def sync(self):
+        return self._simple_command(b'\xc8\x70')
+
+    def optimize(self, options):
+        cdef:
+            bytes boptions = _encode(options)
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x71')
+         .write_bytes(boptions, True)
+         .send())
+        return self.response().check_error() == 0
+
+    def vanish(self):
+        return self._simple_command(b'\xc8\x72')
+
+    def copy(self, path):
+        cdef:
+            bytes bpath = _encode(path)
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x73')
+         .write_bytes(bpath, True)
+         .send())
+        return self.response().check_error() == 0
+
+    def restore(self, path, timestamp, opts=0):
+        cdef:
+            bytes bpath = _encode(path)
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x74')
+         .write_int(len(bpath))
+         .write_long(timestamp)
+         .write_int(opts)
+         .write_bytes(bpath, False)
+         .send())
+        return self.response().check_error() == 0
+
+    def setmst(self, host, port, timestamp, opts=0):
+        cdef:
+            bytes bhost = _encode(host)
+            RequestBuffer request = self.request()
+
+        (request
+         .write_magic(b'\xc8\x78')
+         .write_ints((len(bhost), port))
+         .write_long(timestamp)
+         .write_int(opts)
+         .write_bytes(bhost, False)
+         .send())
+        return self.response().check_error() == 0
+
+    def _long_cmd(self, bytes bmagic):
+        cdef:
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        request.write_magic(bmagic).send()
+
+        response = self.response()
+        if not response.check_error():
+            return response.read_long()
+
+    def rnum(self):
+        return self._long_cmd(b'\xc8\x80')
+
+    def size(self):
+        return self._long_cmd(b'\xc8\x81')
+
+    def stat(self):
+        cdef:
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        self.request().write_magic(b'\xc8\x88').send()
+        response = self.response()
         if not response.check_error():
             return response.read_bytes()
+
+    cdef _misc(self, name, args, update_log):
+        cdef:
+            bytes arg
+            bytes bname = _encode(name)
+            int nargs
+            int rv
+            list accum = []
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        # TokyoTyrant supports "fluent" commands - kinda like Redis, you pass
+        # a command name and the requested parameters, get appropriate resp.
+        if args is None:
+            args = []
+            nargs = 0
+        else:
+            nargs = len(args)
+
+        (request
+         .write_magic(b'\xc8\x90')
+         .write_ints((len(bname), 0 if update_log else 1, nargs))
+         .write_bytes(bname, False))
+
+        # Write all arguments, which are assumed to be bytes.
+        for arg in args:
+            request.write_bytes(arg, True)
+
+        request.send()
+
+        response = self.response()
+        rv = response.check_error()  # 1 if simple error, 0 if OK.
+        nelem = response.read_int()
+        if rv != 0:
+            return
+
+        for _ in range(nelem):
+            accum.append(response.read_bytes())
+        return accum
+
+    def misc(self, name, args=None, update_log=True):
+        return self._misc(name, args or [], update_log)
+
+    cdef _misc_kv(self, cmd, key, value, update_log):
+        cdef:
+            bytes bkey = _encode(key)
+            bytes bval = self.encode_value(value)
+        return self._misc(cmd, [bkey, bval], update_log) is not None
+
+    def misc_put(self, key, value, update_log=True):
+        return self._misc_kv('put', key, value, update_log)
+
+    def misc_putkeep(self, key, value, update_log=True):
+        return self._misc_kv('putkeep', key, value, update_log)
+
+    def misc_putcat(self, key, value, update_log=True):
+        return self._misc_kv('putcat', key, value, update_log)
+
+    def misc_putdup(self, key, value, update_log=True):
+        return self._misc_kv('putdup', key, value, update_log)
+
+    def misc_putdupback(self, key, value, update_log=True):
+        return self._misc_kv('putdupback', key, value, update_log)
+
+    def misc_out(self, key, update_log=True):
+        return self._misc('out', [_encode(key)], update_log) is not None
+
+    def misc_get(self, key):
+        res = self._misc('get', [_encode(key)], False)
+        if res:
+            return self.decode_value(res[0])
+
+    def misc_putlist(self, data, update_log=True):
+        cdef list accum = []
+        for key, value in data.items():
+            accum.append(_encode(key))
+            accum.append(self.encode_value(value))
+        return self._misc('putlist', accum, update_log) is not None
+
+    def _misc_key_list(self, cmd, keys, update_log):
+        cdef list accum = [_encode(key) for key in keys]
+        return self._misc(cmd, accum, update_log)
+
+    def misc_outlist(self, keys, update_log=True):
+        self._misc_key_list('outlist', keys, update_log)
+        return True
+
+    cdef _misc_list_to_dict(self, list items):
+        if items is None: return {}
+
+        cdef:
+            dict result = {}
+            int i = 0, l = len(items)
+
+        while i < l:
+            result[_decode(items[i])] = self.decode_value(items[i + 1])
+            i += 2
+        return result
+
+    def misc_getlist(self, keys, update_log=True):
+        cdef list items = self._misc_key_list('getlist', keys, update_log)
+        return self._misc_list_to_dict(items)
+
+    def misc_getpart(self, key, start=0, length=None):
+        args = [_encode(key), _encode(str(start))]
+        if length is not None:
+            args.append(_encode(str(length)))
+        result = self._misc('getpart', args, False)
+        if result:
+            return _decode(result[0])
+
+    def misc_iterinit(self, key=None):
+        args = [_encode(key)] if key else []
+        return self._misc('iterinit', args, False) is not None
+
+    def misc_iternext(self):
+        ret = self._misc('iternext', [], False)
+        if ret:
+            return (_decode(ret[0]), self.decode_value(ret[1]))
+
+    def misc_sync(self):
+        return self._misc('sync', [], True) is not None
+
+    def misc_optimize(self, opts, update_log=True):
+        return self._misc('optimize', [_encode(opts)], update_log) is not None
+
+    def misc_vanish(self, update_log=True):
+        return self._misc('vanish', [], update_log) is not None
+
+    def misc_error(self):
+        ret = self._misc('error', [], False)
+        if ret:
+            return _decode(ret[0])
+
+    def misc_cacheclear(self):
+        return self._misc('cacheclear', [], False) is not None
+
+    def misc_defragment(self, nsteps=None, update_log=True):
+        args = [_encode(str(nsteps))] if nsteps is not None else []
+        return self._misc('defrag', args, update_log) is not None
+
+    def misc_regex(self, regex, max_records=None):
+        cdef list items
+        args = [_encode(regex)]
+        if max_records is not None:
+            args.append(_encode(str(max_records)))
+        items = self._misc('regex', args, False)
+        return self._misc_list_to_dict(items)
+
+    def misc_range(self, start, stop=None, max_records=0):
+        cdef list items
+        args = [_encode(start), _encode(str(max_records))]
+        if stop is not None:
+            args.append(_encode(stop))
+        items = self._misc('range', args, False)
+        return self._misc_list_to_dict(items)
+
+    def misc_setindex(self, column, index_type, update_log=True):
+        args = [_encode(column), _encode(str(index_type))]
+        return self._misc('setindex', args, update_log) is not None
+
+    def misc_search(self, conditions, cmd=None, update_log=True):
+        cdef list items
+        if cmd is not None:
+            conditions.append(_encode(cmd))
+
+        items = self._misc('search', conditions, update_log)
+        if cmd is None:
+            return [_decode(key) for key in items]
+        elif cmd == 'get':
+            accum = []
+            for item in items:
+                key, rest = item[1:].split(b'\x00', 1)
+                accum.append((_decode(key), rest))
+            return accum
+        elif cmd == 'count':
+            return int(items[0])
+        elif len(items) == 0:
+            return True
+        else:
+            raise ProtocolError('Unexpected results for search cmd=%s' % cmd)
+
+    def misc_genuid(self, update_log=True):
+        ret = self._misc('genuid', [], update_log)
+        return int(ret[0])
 
     def keys(self):
         cdef TTResponseHandler response
@@ -769,178 +1066,13 @@ cdef class TTBinaryProtocol(BinaryProtocol):
                 raise StopIteration
             yield response.read_key()
 
-    def match_prefix(self, prefix, max_keys=1024):
-        cdef:
-            bytes bprefix = _encode(prefix)
-            RequestBuffer request = self.request()
-            TTResponseHandler response
-
-        # fwmkeys method.
-        (request
-         .write_magic(b'\xc8\x58')
-         .write_ints((len(bprefix), max_keys))
-         .write_bytes(bprefix, False)
-         .send())
-
-        response = self.response()
-        if not response.check_error():
-            return response.read_keys()
-
-    def sync(self):
-        self.request().write_magic(b'\xc8\x70').send()
-        return self.response().check_error() == 0
-
-    def optimize(self, options):
-        cdef bytes boptions = _encode(options)
-
-        (self.request()
-         .write_magic(b'\xc8\x71')
-         .write_bytes(boptions, True)
-         .send())
-        return self.response().check_error() == 0
-
-    def vanish(self):
-        self.request().write_magic(b'\xc8\x72').send()
-        return self.response().check_error() == 0
-
-    def copy(self, path):
-        cdef bytes bpath = _encode(path)
-
-        (self.request()
-         .write_magic(b'\xc8\x73')
-         .write_bytes(bpath, True)
-         .send())
-        return self.response().check_error() == 0
-
-    def restore(self, path, timestamp, opts=0):
-        cdef bytes bpath = _encode(path)
-
-        (self.request()
-         .write_magic(b'\xc8\x74')
-         .write_int(len(bpath))
-         .write_long(timestamp)
-         .write_int(opts)
-         .write_bytes(bpath, False)
-         .send())
-        return self.response().check_error() == 0
-
-    def set_master(self, host, port, timestamp, opts=0):
-        cdef bytes bhost = _encode(host)
-
-        (self.request()
-         .write_magic(b'\xc8\x78')
-         .write_ints((len(bhost), port))
-         .write_long(timestamp)
-         .write_int(opts)
-         .write_bytes(bhost, False)
-         .send())
-        return self.response().check_error() == 0
-
-    def misc(self, name, keys=None, data=None, update_log=True, _cmd=None):
-        cdef:
-            int opts = 0 if update_log else 1
-            int rv
-            RequestBuffer request = self.request()
-            TTResponseHandler response
-
-        # TokyoTyrant supports "fluent" commands - kinda like Redis, you pass
-        # a command name and the requested parameters, get appropriate resp.
-        if keys is not None and data is not None:
-            raise ValueError('misc() requires only one of "keys" or "data" be '
-                             'specified.')
-        elif keys is None and data is None:
-            keys = []
-        elif keys is not None and not isinstance(keys, (list, tuple)):
-            keys = (keys,)
-
-        if name == 'put' and len(data) > 1:
-            name = 'putlist'
-        elif name == 'get' and len(keys) > 1:
-            name = 'getlist'
-        elif name == 'out' and len(keys) > 1:
-            name = 'outlist'
-
-        cdef:
-            bytes bkey, bval
-            bytes bname = _encode(name)
-            int nargs
-
-        # Number of parameters we will be providing.
-        if name.startswith('put'):
-            nargs = len(data) * 2
-        else:
-            nargs = len(keys)
-
-        (request
-         .write_magic(b'\xc8\x90')
-         .write_ints((len(bname), opts, nargs))
-         .write_bytes(bname, False))
-
-        if bname.startswith(b'put'):
-            for key, value in data.items():
-                (request
-                 .write_key(key)
-                 .write_bytes(self.encode_value(value), True))
-        else:
-            for key in keys:
-                request.write_key(key)
-
-        request.send()
-
-        response = self.response()
-        rv = response.check_error()  # 1 if simple error, 0 if OK.
-        nelem = response.read_int()
-
-        if bname == b'search':
-            if _cmd is None:
-                accum = []
-                for _ in range(nelem):
-                    accum.append(response.read_key())
-                return accum
-            elif _cmd == b'get':
-                accum = []
-                for _ in range(nelem):
-                    raw_data = response.read_bytes()
-                    key, rest = raw_data[1:].split(b'\x00', 1)
-                    accum.append((response.key_decode(key), rest))
-                return accum
-            elif _cmd == b'count':
-                assert nelem == 1, 'Count should always return 1 result.'
-                ival = response.read_bytes()
-                return int(ival.decode('ascii'))
-            elif nelem == 0:
-                return rv == 0
-            else:
-                raise ValueError('Unexpected results for search cmd=%s' % _cmd)
-        elif nelem == 0 and bname != b'getlist':
-            return rv == 0
-        elif nelem == 1:
-            return response.read_value()
-        else:
-            accum = {}
-            for _ in range(nelem // 2):
-                key = response.read_key()
-                value = response.read_value()
-                accum[key] = value
-            return accum
-
-    def _long_cmd(self, bytes bmagic):
-        self.request().write_magic(bmagic).send()
-        response = self.response()
-        response.check_error()
-        return response.read_long()
-
-    def rnum(self):
-        return self._long_cmd(b'\xc8\x80')
-
-    def size(self):
-        return self._long_cmd(b'\xc8\x81')
-
-    def stat(self):
-        self.request().write_magic(b'\xc8\x88').send()
-        response = self.response()
-        response.check_error()
-        return response.read_bytes()
+    def items(self, start_key=None):
+        self.misc_iterinit(start_key)
+        while True:
+            result = self.misc_iternext()
+            if result is None:
+                raise StopIteration
+            yield result
 
 
 def dict_to_table(dict d):

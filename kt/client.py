@@ -321,18 +321,18 @@ class TokyoTyrant(BaseClient):
         return self._protocol.out(key)
 
     def get_bulk(self, keys):
-        return self._protocol.get_bulk(keys)
+        return self._protocol.mget(keys)
 
     def set_bulk(self, __data=None, **kwargs):
         if __data is not None:
             kwargs.update(__data)
-        return self._protocol.misc('putlist', data=kwargs)
+        return self._protocol.misc_putlist(kwargs)
 
     def remove_bulk(self, keys):
-        return self._protocol.misc('outlist', keys=keys)
+        return self._protocol.misc_outlist(keys)
 
     def script(self, name, key=None, value=None):
-        return self._protocol.script(name, key, value)
+        return self._protocol.ext(name, key, value)
 
     def clear(self):
         return self._protocol.vanish()
@@ -361,16 +361,17 @@ class TokyoTyrant(BaseClient):
     def setnr(self, key, value):
         self._protocol.putnr(key, value)
 
+    def setdup(self, key, value):
+        return self._protocol.putdup(key, value)
+
+    def setdupback(self, key, value):
+        return self._protocol.putdupback(key, value)
+
     def get_part(self, key, start=None, end=None):
-        params = [key]
-        if start is not None or end is not None:
-            params.append(str(start or 0))
-        if end is not None:
-            params.append(str(end))
-        return self._protocol.misc('getpart', params)
+        return self._protocol.misc_getpart(key, start or 0, end)
 
     def exists(self, key):
-        return self._protocol.vsiz(key)
+        return self._protocol.vsiz(key) is not None
 
     def length(self, key):
         return self._protocol.vsiz(key)
@@ -381,8 +382,8 @@ class TokyoTyrant(BaseClient):
     def incr_double(self, key, n=1.):
         return self._protocol.adddouble(key, n)
 
-    def misc(self, cmd, keys=None, data=None, update_log=True):
-        return self._protocol.misc(cmd, keys, data, update_log)
+    def misc(self, cmd, args=None, update_log=True):
+        return self._protocol.misc(cmd, args, update_log)
 
     def __getitem__(self, item):
         if isinstance(item, slice):
@@ -409,8 +410,10 @@ class TokyoTyrant(BaseClient):
 
     @property
     def error(self):
-        code, msg = self._protocol.misc('error').split(': ', 1)
-        return int(code), msg
+        error_str = self._protocol.misc_error()
+        if error_str is not None:
+            code, msg = error_str.split(': ', 1)
+            return int(code), msg
 
     def optimize(self, options):
         return self._protocol.optimize(options)
@@ -421,40 +424,43 @@ class TokyoTyrant(BaseClient):
     def copy(self, path):
         return self._protocol.copy(path)
 
+    def _datetime_to_timestamp(self, dt):
+        timestamp = time.mktime(dt.timetuple())
+        timestamp *= 1000000
+        return int(timestamp + dt.microsecond)
+
     def restore(self, path, timestamp, options=0):
         if isinstance(timestamp, datetime.datetime):
-            timestamp = int(timestamp.timestamp())
+            timestamp = self._datetime_to_timestamp(timestamp)
         return self._protocol.restore(path, timestamp, options)
 
     def set_master(self, host, port, timestamp, options=0):
         if isinstance(timestamp, datetime.datetime):
-            timestamp = int(timestamp.timestamp())
-        return self._protocol.set_master(host, port, timestamp, options)
+            timestamp = self._datetime_to_timestamp(timestamp)
+        return self._protocol.setmst(host, port, timestamp, options)
 
     def clear_cache(self):
-        return self._protocol.misc('cacheclear', [])
+        return self._protocol.misc_cacheclear()
+
+    def defragment(self, nsteps=None):
+        return self._protocol.misc_defragment(nsteps)
 
     def get_range(self, start, stop=None, max_keys=0):
-        args = [start, str(max_keys)]
-        if stop is not None:
-            args.append(stop)
-        rv = self._protocol.misc('range', args)
-        return {} if rv is True else rv
+        return self._protocol.misc_range(start, stop, max_keys)
 
     def match_prefix(self, prefix, max_keys=1024):
-        return self._protocol.match_prefix(prefix, max_keys)
+        return self._protocol.fwmkeys(prefix, max_keys)
 
     def match_regex(self, regex, max_keys=1024):
-        rv = self._protocol.misc('regex', [regex, str(max_keys)])
-        return {} if rv is True else rv
+        return self._protocol.misc_regex(regex, max_keys)
 
     def iter_from(self, start_key):
-        self._protocol.misc('iterinit', [start_key])
+        self._protocol.misc_iterinit(start_key)
         accum = {}
         while True:
-            kv = self._protocol.misc('iternext', [])
+            kv = self._protocol.misc_iternext()
             if kv:
-                accum.update(kv)
+                accum[kv[0]] = kv[1]
             else:
                 break
         return accum
@@ -462,25 +468,26 @@ class TokyoTyrant(BaseClient):
     def keys(self):
         return self._protocol.keys()
 
+    def items(self, start_key=None):
+        return self._protocol.items(start_key)
+
     def set_index(self, name, index_type, check_exists=False):
         if check_exists:
             index_type |= IOP_KEEP
-        return self._protocol.misc('setindex', keys=[name, str(index_type)])
+        return self._protocol.misc_setindex(name, index_type)
 
     def optimize_index(self, name):
-        return self._protocol.misc('setindex', keys=[name, str(IOP_OPTIMIZE)])
+        return self._protocol.misc_setindex(name, IOP_OPTIMIZE)
 
     def delete_index(self, name):
-        return self._protocol.misc('setindex', keys=[name, str(IOP_DELETE)])
+        return self._protocol.misc_setindex(name, IOP_DELETE)
 
     def search(self, expressions, cmd=None):
-        if cmd:
-            expressions.append((cmd,))
-        keys = [_pack_misc_cmd(*expr) for expr in expressions]
-        return self._protocol.misc('search', keys=keys, _cmd=cmd)
+        conditions = [_pack_misc_cmd(*expr) for expr in expressions]
+        return self._protocol.misc_search(conditions, cmd)
 
     def genuid(self):
-        return int(self._protocol.misc('genuid', keys=[]))
+        return self._protocol.misc_genuid()
 
     def __iter__(self):
         return iter(self._protocol.keys())
@@ -543,14 +550,14 @@ class QueryBuilder(object):
         return client.search(self.build_search())
 
     def delete(self, client):
-        return client.search(self.build_search(), b'out')
+        return client.search(self.build_search(), 'out')
 
     def get(self, client):
-        results = client.search(self.build_search(), b'get')
+        results = client.search(self.build_search(), 'get')
         accum = []
         for key, raw_data in results:
             accum.append((key, table_to_dict(raw_data)))
         return accum
 
     def count(self, client):
-        return client.search(self.build_search(), b'count')
+        return client.search(self.build_search(), 'count')

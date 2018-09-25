@@ -430,6 +430,8 @@ class TokyoTyrantTests(object):
         self.assertEqual(sorted(list(self.db)), ['k2', 'k3', 'key'])
         del self.db['k3']
         self.assertEqual(sorted(list(self.db.keys())), ['k2', 'key'])
+        self.assertEqual(sorted(list(self.db.items())), [
+            ('k2', 'v2'), ('key', 'foo')])
 
         self.db.setnr('k1', 'v1x')
         self.assertEqual(self.db['k1'], 'v1x')
@@ -455,40 +457,61 @@ class TokyoTyrantTests(object):
 
     def test_misc_commands(self):
         self.db.set_bulk({'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
-        self.assertEqual(self.db.misc('get', 'k1'), 'v1')
-        self.assertEqual(self.db.misc('get', 'k3'), 'v3')
-        self.assertFalse(self.db.misc('get', 'kx'))
-        self.assertTrue(self.db.misc('out', 'k1'))
-        self.assertFalse(self.db.misc('out', 'k1'))
-        self.assertTrue(self.db.misc('put', data={'k1': 'v1-x'}))
-        self.assertEqual(self.db.misc('get', 'k1'), 'v1-x')
-        self.assertTrue(self.db.misc('put', data={'k1': 'v1-y'}))
-        self.assertTrue(self.db.misc('putlist', data={'a': 'A', 'b': 'B'}))
-        self.assertEqual(self.db.misc('get', 'k1'), 'v1-y')
-        self.assertTrue(self.db.misc('out', 'k1'))
-        self.assertFalse(self.db.misc('out', 'k1'))
-        self.assertFalse(self.db.misc('get', 'k1'))
-        self.assertTrue(self.db.misc('put', data={'k1': 'v1-z'}))
-        self.assertTrue(self.db.misc('putlist', data={
+        p = self.db._protocol
+        self.assertEqual(p.misc_get('k1'), 'v1')
+        self.assertEqual(p.misc_get('k3'), 'v3')
+        self.assertTrue(p.misc_get('kx') is None)
+
+        self.assertTrue(p.misc_out('k1'))
+        self.assertFalse(p.misc_out('k1'))
+
+        self.assertTrue(p.misc_put('k1', 'v1-x'))
+        self.assertEqual(p.misc_get('k1'), 'v1-x')
+        self.assertTrue(p.misc_put('k1', 'v1-y'))
+        self.assertTrue(p.misc_putlist({'aa': 'AA', 'bb': 'BB'}))
+
+        self.assertEqual(p.misc_get('k1'), 'v1-y')
+        self.assertEqual(p.misc_getlist(['k1', 'k2', 'aa', 'bb']), {
+            'k1': 'v1-y',
+            'k2': 'v2',
+            'aa': 'AA',
+            'bb': 'BB'})
+
+        self.assertTrue(p.misc_out('k1'))
+        self.assertFalse(p.misc_out('k1'))
+        self.assertTrue(p.misc_get('k1') is None)
+
+        self.assertTrue(p.misc_putlist({
             'k1': 'v1-x',
             'k2': 'v2-x',
             'k3': 'v3-x'}))
         self.assertEqual(
-            self.db.misc('getlist', ['k1', 'k2', 'k3', 'k4', 'k5']),
+            p.misc_getlist(['k1', 'k2', 'k3', 'k4', 'k5']),
             {'k1': 'v1-x', 'k2': 'v2-x', 'k3': 'v3-x'})
-        self.assertEqual(self.db.misc('getlist', ['k9', 'xz9']), {})
-        self.assertEqual(self.db.misc('getlist', []), {})
-        self.assertTrue(self.db.misc('outlist', ['k1', 'k2', 'k3']))
-        self.assertTrue(self.db.misc('outlist', ['k1', 'k3']))  # Always true.
-        self.assertFalse(self.db.misc('out', ['k1']))  # Returns true/false.
-        self.assertTrue(self.db.misc('putlist', data={}))  # Always true.
-        self.assertFalse(self.db.misc('put', data={}))  # Returns true/false.
+        self.assertEqual(p.misc_getlist(['k9', 'xz9']), {})
+        self.assertEqual(p.misc_getlist([]), {})
+
+        self.assertTrue(p.misc_outlist(['k1', 'k2', 'k3']))
+        self.assertTrue(p.misc_outlist(['k1', 'k3']))  # Always true.
+        self.assertFalse(p.misc_out('k1'))  # Returns true/false.
+        self.assertTrue(p.misc_putlist({}))  # Always true.
+
+        self.assertTrue(p.misc_vanish())
+        p.misc_put('k1', 'v1')
+        p.misc_putcat('k1', '-x')
+        p.misc_putcat('k2', 'v2-y')
+        p.misc_putkeep('k2', 'v2-z')
+        p.misc_putkeep('k3', 'v3-z')
+        self.assertEqual(p.misc_getlist(['k1', 'k2', 'k3', 'kx']), {
+            'k1': 'v1-x',
+            'k2': 'v2-y',
+            'k3': 'v3-z'})
 
     def test_misc_noulog(self):
-        self.db.misc('putlist', data={'k1': 'v1', 'k2': 'v2'}, update_log=0)
-        self.assertEqual(self.db.misc('get', 'k1', update_log=0), 'v1')
-        self.assertEqual(self.db.misc('get', 'k2', update_log=0), 'v2')
-        self.assertFalse(self.db.misc('get', 'k3', update_log=0))
+        self.db.misc('putlist', [b'k1', b'v1', b'k2', b'v2'], False)
+        self.assertEqual(self.db.misc('get', [b'k1'], False), [b'v1'])
+        self.assertEqual(self.db.misc('get', [b'k2'], False), [b'v2'])
+        self.assertTrue(self.db.misc('get', [b'k3'], False) is None)
 
 
 class TestTokyoTyrantHash(TokyoTyrantTests, BaseTestCase):
