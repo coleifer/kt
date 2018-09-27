@@ -206,6 +206,136 @@ class TestKyotoTycoonSerializers(BaseTestCase):
         self.assertEqual(db.get('k2'), b'')
 
 
+class TestKyotoTycoonScripting(BaseTestCase):
+    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/kt.lua')
+    server = EmbeddedServer
+    server_kwargs = {
+        'database': '%',
+        'server_args': ['-scr', lua_script]}
+
+    def test_script_set(self):
+        L = self.db.lua
+
+        # Test adding a single item.
+        self.assertEqual(L.sadd({'key': 's1', 'value': 'foo'}), {'num': '1'})
+        self.assertEqual(L.sadd({'key': 's1', 'value': 'foo'}), {'num': '0'})
+
+        # Test adding multiple items.
+        items = b'\x01'.join([b'bar', b'baz', b'nug'])
+        self.assertEqual(L.sadd({'key': 's1', 'value': items}), {'num': '3'})
+
+        # Test get cardinality.
+        self.assertEqual(L.scard({'key': 's1'}), {'num': '4'})
+
+        # Test membership.
+        self.assertEqual(L.sismember({'key': 's1', 'value': 'bar'}),
+                         {'num': '1'})
+        self.assertEqual(L.sismember({'key': 's1', 'value': 'baze'}),
+                         {'num': '0'})
+
+        keys = ['bar', 'baz', 'foo', 'nug']
+
+        # Test get members.
+        self.assertEqual(L.smembers({'key': 's1'}),
+                         dict((k, '1') for k in keys))
+
+        # Test pop.
+        res = L.spop({'key': 's1'})
+        self.assertEqual(res['num'], '1')
+        self.assertTrue(res['value'] in keys)
+
+        # Restore all keys.
+        L.sadd({'key': 's1', 'value': b'\x01'.join(k.encode() for k in keys)})
+        self.assertEqual(L.srem(key='s1', value='nug'), {'num': '1'})
+        self.assertEqual(L.srem(key='s1', value='nug'), {'num': '0'})
+
+        # Create another set, s2 {baze, foo, zai}.
+        L.sadd(key='s2', value=b'\x01'.join([b'baze', b'foo', b'zai']))
+
+        # Test multiple set operations, {bar, baz, foo} | {baze, foo, zai}.
+        self.assertEqual(L.sinter(key1='s1', key2='s2'), {'foo': '1'})
+        res = L.sunion(key1='s1', key2='s2')
+        self.assertEqual(res, dict((k, '1') for k in
+                                   ('bar', 'baz', 'baze', 'foo', 'zai')))
+
+        res = L.sdiff(key1='s1', key2='s2')
+        self.assertEqual(res, {'bar': '1', 'baz': '1'})
+        res = L.sdiff(key1='s2', key2='s1')
+        self.assertEqual(res, {'baze': '1', 'zai': '1'})
+
+        res = L.sdiff(key1='s1', key2='s2', dest='s3')
+        self.assertEqual(res, {'bar': '1', 'baz': '1'})
+        res = L.smembers(key='s3')
+        self.assertEqual(res, {'bar': '1', 'baz': '1'})
+
+    def test_script_hash(self):
+        L = self.db.lua
+
+        # Set multiple items, returns number set.
+        res = L.hmset({'table_key': 'h1', 'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+        self.assertEqual(res['num'], '3')
+
+        # Set individual item using key=..., value=...
+        res = L.hset({'table_key': 'h1', 'key': 'k1', 'value': 'v1-x'})
+        self.assertEqual(res['num'], '1')
+
+        # Retrieve an individual item.
+        res = L.hget({'table_key': 'h1', 'key': 'k1'})
+        self.assertEqual(res, {'value': 'v1-x'})
+
+        # Missing key returns empty response.
+        res = L.hget({'table_key': 'h1', 'key': 'kx'})
+        self.assertEqual(res, {})
+
+        # Retrieve multiple items. Missing keys are omitted.
+        res = L.hmget({'table_key': 'h1', 'k1': '', 'k2': '', 'kx': ''})
+        self.assertEqual(res, {'k1': 'v1-x', 'k2': 'v2'})
+
+        # Retrieve all key/values in hash.
+        res = L.hgetall({'table_key': 'h1'})
+        self.assertEqual(res, {'k1': 'v1-x', 'k2': 'v2', 'k3': 'v3'})
+
+        # Delete individual key, returns number deleted.
+        self.assertEqual(L.hdel({'table_key': 'h1', 'key': 'k2'}),
+                         {'num': '1'})
+        self.assertEqual(L.hdel({'table_key': 'h1', 'key': 'k2'}),
+                         {'num': '0'})
+
+        # Delete multiple keys, returns number deleted.
+        self.assertEqual(L.hmdel({'table_key': 'h1', 'k1': '', 'k3': ''}),
+                         {'num': '2'})
+        self.assertEqual(L.hgetall({'table_key': 'h1'}), {})
+
+        # We can conditionally set a key (if it does not exist). Returns 1 if
+        # successful.
+        res = L.hsetnx({'table_key': 'h1', 'key': 'k1', 'value': 'v1-y'})
+        self.assertEqual(res, {'num': '1'})
+
+        res = L.hsetnx({'table_key': 'h1', 'key': 'k1', 'value': 'v1-z'})
+        self.assertEqual(res, {'num': '0'})
+
+        # Set an additional key and verify hash contents for subsequent checks.
+        L.hsetnx({'table_key': 'h1', 'key': 'k2', 'value': 'v2'})
+        self.assertEqual(L.hgetall({'table_key': 'h1'}),
+                         {'k1': 'v1-y', 'k2': 'v2'})
+
+        self.assertEqual(L.hlen({'table_key': 'h1'}), {'num': '2'})
+        self.assertEqual(L.hcontains({'table_key': 'h1', 'key': 'k1'}),
+                         {'num': '1'})
+        self.assertEqual(L.hcontains({'table_key': 'h1', 'key': 'kx'}),
+                         {'num': '0'})
+
+        # Getting values from a non-existent hash returns empty response.
+        self.assertEqual(L.hgetall({'table_key': 'h2'}), {})
+
+    def test_script_list(self):
+        self.assertEqual(self.db.script('list'), {})
+
+        self.db.update(k1='v1', k2='v2', k3='v3')
+        self.assertEqual(self.db.script('list'),
+                         {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+
+
 class TestKyotoTycoonMultiDatabase(BaseTestCase):
     server = EmbeddedServer
     server_kwargs = {'database': '%', 'server_args': ['*']}
@@ -548,6 +678,74 @@ class TestTokyoTyrantBTree(TokyoTyrantTests, BaseTestCase):
         self.assertEqual(self.db.iter_from('k16'), {
             'k16': 'v16', 'k17': 'v17', 'k18': 'v18', 'k19': 'v19'})
         self.assertEqual(self.db.iter_from('kx'), {})
+
+
+class TestTokyoTyrantScripting(BaseTestCase):
+    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/tt.lua')
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {
+        'database': '+',
+        'server_args': ['-ext', lua_script]}
+
+    def test_script_method(self):
+        self.db.update(k1='v1', k2='v2', k3='v3')
+        self.assertTrue('k2' in self.db)
+        self.assertEqual(self.db.script('seize', 'k2'), b'v2')
+        self.assertFalse('k2' in self.db)
+        self.assertEqual(self.db.script('seize', 'k2'), b'')
+
+    def test_script_match(self):
+        def decode_match(r):
+            accum = {}
+            for line in r.decode('utf-8').strip().splitlines():
+                key, value = line.split('\t')
+                accum[key] = value
+            return accum
+
+        self.db.update(key='value', key_a='a', key_b='bbb', ky_a='aa')
+        results = self.db.script('match_pattern', 'key*')
+        self.assertEqual(decode_match(results), {'key': 'value', 'key_a': 'a',
+                                                 'key_b': 'bbb'})
+
+        results = self.db.script('match_pattern', 'key_%a')
+        self.assertEqual(decode_match(results), {'key_a': 'a', 'key_b': 'bbb'})
+
+        # No matches returns empty result.
+        results = self.db.script('match_pattern', '%d+')
+        self.assertEqual(decode_match(results), {})
+
+        results = self.db.script('match_similar', 'key', 1)
+        self.assertEqual(decode_match(results), {'key': 'value'})
+
+        results = self.db.script('match_similar', 'key', 2)
+        self.assertEqual(decode_match(results), {'key': 'value', 'key_a': 'a',
+                                                 'key_b': 'bbb'})
+
+        results = self.db.script('match_similar_value', 'a', 1)
+        self.assertEqual(decode_match(results), {'key_a': 'a', 'ky_a': 'aa'})
+
+    def test_script_queue(self):
+        for i in range(5):
+            self.db.script('enqueue', 'testqueue', 'item-%s' % i)
+
+        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'5')
+
+        # By default one item is dequeued.
+        item = self.db.script('dequeue', 'testqueue')
+        self.assertEqual(item, b'item-0\n')
+        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'4')
+
+        # We can dequeue multiple items, which are newline-separated.
+        items = self.db.script('dequeue', 'testqueue', 3)
+        self.assertEqual(items, b'item-1\nitem-2\nitem-3\n')
+
+        # It's OK if fewer items exist.
+        items = self.db.script('dequeue', 'testqueue', 3)
+        self.assertEqual(items, b'item-4\n')
+
+        # No items -> empty string and zero count.
+        self.assertEqual(self.db.script('dequeue', 'testqueue'), b'')
+        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'0')
 
 
 class TestTokyoTyrantSerializers(TestKyotoTycoonSerializers):

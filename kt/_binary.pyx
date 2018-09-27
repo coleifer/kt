@@ -780,7 +780,12 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if response.check_error():
             raise ScriptError('error calling %s(%s, %s)' % (name, key, value))
 
-        return response.read_bytes()
+        resp = response.read_bytes()
+        if resp == b'true':
+            return True
+        elif resp == b'false':
+            return False
+        return resp
 
     def sync(self):
         return self._simple_command(b'\xc8\x70')

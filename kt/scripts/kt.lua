@@ -6,6 +6,7 @@ db = kt.db
 function hkv(inmap, outmap, fn)
   local key = inmap.table_key
   if not key then
+    kt.log("system", "hash function missing required: 'table_key'")
     return kt.RVEINVALID
   end
   inmap.table_key = nil
@@ -175,7 +176,11 @@ end
 -- returns: { num }
 function hlen(inmap, outmap)
   local fn = function(k, v, i, o)
-    o.num = #v
+    local count = 0
+    for _ in pairs(v) do
+      count = count + 1
+    end
+    o.num = count
     return nil, true
   end
   return hkv(inmap, outmap, fn)
@@ -206,6 +211,7 @@ end
 function skv(inmap, outmap, fn)
   local key = inmap.key
   if not key then
+    kt.log("system", "set function missing required: 'key'")
     return kt.RVEINVALID
   end
   inmap.key = nil
@@ -260,7 +266,11 @@ end
 -- returns: { num }
 function scard(inmap, outmap)
   local fn = function(k, v, i, o)
-    o.num = #v
+    local count = 0
+    for _ in pairs(v) do
+      count = count + 1
+    end
+    o.num = count
     return nil, true
   end
   return skv(inmap, outmap, fn)
@@ -353,6 +363,7 @@ end
 function svv(inmap, outmap, fn)
   local key1, key2 = inmap.key1, inmap.key2
   if not key1 or not key2 then
+    kt.log("system", "set function missing required: 'key1' or 'key2'")
     return kt.RVEINVALID
   end
   local value1, xt = db:get(key1)
