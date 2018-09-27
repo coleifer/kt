@@ -322,6 +322,7 @@ function spop(inmap, outmap)
     for key, value in pairs(v) do
       o.num = 1
       o.value = key
+      v[key] = nil
       return v, true
     end
     return nil, true
@@ -436,6 +437,109 @@ function sdiff(inmap, outmap)
 end
 
 
+-- helper function for list functions.
+function lkv(inmap, outmap, fn)
+  local key = inmap.key
+  if not key then
+    kt.log("system", "list function missing required: 'key'")
+    return kt.RVEINVALID
+  end
+  inmap.key = nil
+  local value, xt = db:get(key)
+  local value_array = {}
+  if value then
+    value_array = kt.arrayload(value)
+  end
+  local new_value, ok = fn(key, value_array, inmap, outmap)
+  if ok then
+    if new_value and not db:set(key, kt.arraydump(new_value), xt) then
+      return kt.RVEINTERNAL
+    else
+      return kt.RVSUCCESS
+    end
+  else
+    return kt.RVELOGIC
+  end
+end
+
+
+-- Redis-like LPUSH
+-- accepts: { key, item }
+-- returns: {}
+function lpush(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local value = inmap.value
+    if not value then
+      kt.log("system", "missing value parameter to lpush")
+      return kt.RVEINVALID
+    end
+    table.insert(arr, value)
+    return arr, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like LINDEX -- zero-based!
+-- accepts: { key, index }
+-- returns: { value }
+function lindex(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local index = tonumber(inmap.index or '0') + 1
+    local val = arr[index]
+    outmap.value = arr[index]
+    return nil, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like RPOP -- removes last elem.
+-- accepts: { key }
+-- returns: { value }
+function lrpop(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    outmap.value = arr[#arr]
+    arr[#arr] = nil
+    return arr, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like LLEN -- returns length of list.
+-- accepts: { key }
+-- returns: { num }
+function llen(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    outmap.num = #arr
+    return nil, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like LSET -- set item at index.
+-- accepts: { key, index, value }
+-- returns: {}
+function lset(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local idx = tonumber(inmap.index or "0")
+    if not inmap.value then
+      kt.log("info", "missing value for lset")
+      return nil, false
+    end
+    if idx < 0 or idx >= #arr then
+      kt.log("info", "invalid index for lset")
+      return nil, false
+    end
+    arr[idx + 1] = inmap.value
+    return arr, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
 -- Misc helpers.
 
 
@@ -446,6 +550,7 @@ function move(inmap, outmap)
   local src = inmap.src
   local dest = inmap.dest
   if not src or not dest then
+    kt.log("info", "missing src and/or dest key in move() call")
     return kt.RVEINVALID
   end
   local keys = { src, dest }
@@ -491,4 +596,19 @@ function list(inmap, outmap)
     outmap[key] = value
   end
   return kt.RVSUCCESS
+end
+
+
+-- Hash one or more values.
+-- accepts: { val1: method1, val2: method2, ... }
+-- returns: { val1: hash1, val2: hash2, ... }
+function hash(inmap, outmap)
+  local key, value
+  for key, val in pairs(inmap) do
+    if val == 'fnv' then
+      outmap[key] = kt.hash_fnv(val)
+    else
+      outmap[key] = kt.hash_murmur(val)
+    end
+  end
 end

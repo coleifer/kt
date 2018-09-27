@@ -213,39 +213,39 @@ class TestKyotoTycoonScripting(BaseTestCase):
         'database': '%',
         'server_args': ['-scr', lua_script]}
 
+    def test_script_list(self):
+        L = self.db.lua
+
     def test_script_set(self):
         L = self.db.lua
 
         # Test adding a single item.
-        self.assertEqual(L.sadd({'key': 's1', 'value': 'foo'}), {'num': '1'})
-        self.assertEqual(L.sadd({'key': 's1', 'value': 'foo'}), {'num': '0'})
+        self.assertEqual(L.sadd(key='s1', value='foo'), {'num': '1'})
+        self.assertEqual(L.sadd(key='s1', value='foo'), {'num': '0'})
 
         # Test adding multiple items.
         items = b'\x01'.join([b'bar', b'baz', b'nug'])
-        self.assertEqual(L.sadd({'key': 's1', 'value': items}), {'num': '3'})
+        self.assertEqual(L.sadd(key='s1', value=items), {'num': '3'})
 
         # Test get cardinality.
-        self.assertEqual(L.scard({'key': 's1'}), {'num': '4'})
+        self.assertEqual(L.scard(key='s1'), {'num': '4'})
 
         # Test membership.
-        self.assertEqual(L.sismember({'key': 's1', 'value': 'bar'}),
-                         {'num': '1'})
-        self.assertEqual(L.sismember({'key': 's1', 'value': 'baze'}),
-                         {'num': '0'})
+        self.assertEqual(L.sismember(key='s1', value='bar'), {'num': '1'})
+        self.assertEqual(L.sismember(key='s1', value='baze'), {'num': '0'})
 
         keys = ['bar', 'baz', 'foo', 'nug']
 
         # Test get members.
-        self.assertEqual(L.smembers({'key': 's1'}),
-                         dict((k, '1') for k in keys))
+        self.assertEqual(L.smembers(key='s1'), dict((k, '1') for k in keys))
 
         # Test pop.
-        res = L.spop({'key': 's1'})
+        res = L.spop(key='s1')
         self.assertEqual(res['num'], '1')
         self.assertTrue(res['value'] in keys)
 
         # Restore all keys.
-        L.sadd({'key': 's1', 'value': b'\x01'.join(k.encode() for k in keys)})
+        L.sadd(key='s1', value=b'\x01'.join(k.encode() for k in keys))
         self.assertEqual(L.srem(key='s1', value='nug'), {'num': '1'})
         self.assertEqual(L.srem(key='s1', value='nug'), {'num': '0'})
 
@@ -268,67 +268,87 @@ class TestKyotoTycoonScripting(BaseTestCase):
         res = L.smembers(key='s3')
         self.assertEqual(res, {'bar': '1', 'baz': '1'})
 
+    def test_script_list(self):
+        L = self.db.lua
+
+        self.assertEqual(L.lpush(key='l1', value='i0'), {})
+        # Test appending items to list.
+        for i in range(1, 5):
+            L.lpush(key='l1', value='i%s' % i)
+
+        # Test accessing items by index.
+        for i in range(5):
+            self.assertEqual(L.lindex(key='l1', index=i), {'value': 'i%s' % i})
+
+        # Invalid index returns empty result set.
+        self.assertEqual(L.lindex(key='l1', index=6), {})
+        self.assertEqual(L.lindex(key='l1', index=-1), {})
+
+        # Get length of list, pop last item, verify length change.
+        self.assertEqual(L.llen(key='l1'), {'num': '5'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'i4'})
+        self.assertEqual(L.llen(key='l1'), {'num': '4'})
+
+        # Verify setting indices.
+        self.assertEqual(L.lset(key='l1', index=2, value='i2-x'), {})
+        self.assertEqual(L.lindex(key='l1', index=2), {'value': 'i2-x'})
+
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'i3'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'i2-x'})
+
     def test_script_hash(self):
         L = self.db.lua
 
         # Set multiple items, returns number set.
-        res = L.hmset({'table_key': 'h1', 'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+        res = L.hmset(table_key='h1', k1='v1', k2='v2', k3='v3')
         self.assertEqual(res['num'], '3')
 
         # Set individual item using key=..., value=...
-        res = L.hset({'table_key': 'h1', 'key': 'k1', 'value': 'v1-x'})
+        res = L.hset(table_key='h1', key='k1', value='v1-x')
         self.assertEqual(res['num'], '1')
 
         # Retrieve an individual item.
-        res = L.hget({'table_key': 'h1', 'key': 'k1'})
-        self.assertEqual(res, {'value': 'v1-x'})
+        self.assertEqual(L.hget(table_key='h1', key='k1'), {'value': 'v1-x'})
 
         # Missing key returns empty response.
-        res = L.hget({'table_key': 'h1', 'key': 'kx'})
-        self.assertEqual(res, {})
+        self.assertEqual(L.hget(table_key='h1', key='kx'), {})
 
         # Retrieve multiple items. Missing keys are omitted.
-        res = L.hmget({'table_key': 'h1', 'k1': '', 'k2': '', 'kx': ''})
+        res = L.hmget(table_key='h1', k1='', k2='', kx='')
         self.assertEqual(res, {'k1': 'v1-x', 'k2': 'v2'})
 
         # Retrieve all key/values in hash.
-        res = L.hgetall({'table_key': 'h1'})
+        res = L.hgetall(table_key='h1')
         self.assertEqual(res, {'k1': 'v1-x', 'k2': 'v2', 'k3': 'v3'})
 
         # Delete individual key, returns number deleted.
-        self.assertEqual(L.hdel({'table_key': 'h1', 'key': 'k2'}),
-                         {'num': '1'})
-        self.assertEqual(L.hdel({'table_key': 'h1', 'key': 'k2'}),
-                         {'num': '0'})
+        self.assertEqual(L.hdel(table_key='h1', key='k2'), {'num': '1'})
+        self.assertEqual(L.hdel(table_key='h1', key='k2'), {'num': '0'})
 
         # Delete multiple keys, returns number deleted.
-        self.assertEqual(L.hmdel({'table_key': 'h1', 'k1': '', 'k3': ''}),
-                         {'num': '2'})
-        self.assertEqual(L.hgetall({'table_key': 'h1'}), {})
+        self.assertEqual(L.hmdel(table_key='h1', k1='', k3=''), {'num': '2'})
+        self.assertEqual(L.hgetall(table_key='h1'), {})
 
         # We can conditionally set a key (if it does not exist). Returns 1 if
         # successful.
-        res = L.hsetnx({'table_key': 'h1', 'key': 'k1', 'value': 'v1-y'})
+        res = L.hsetnx(table_key='h1', key='k1', value='v1-y')
         self.assertEqual(res, {'num': '1'})
 
-        res = L.hsetnx({'table_key': 'h1', 'key': 'k1', 'value': 'v1-z'})
+        res = L.hsetnx(table_key='h1', key='k1', value='v1-z')
         self.assertEqual(res, {'num': '0'})
 
         # Set an additional key and verify hash contents for subsequent checks.
-        L.hsetnx({'table_key': 'h1', 'key': 'k2', 'value': 'v2'})
-        self.assertEqual(L.hgetall({'table_key': 'h1'}),
-                         {'k1': 'v1-y', 'k2': 'v2'})
+        L.hsetnx(table_key='h1', key='k2', value='v2')
+        self.assertEqual(L.hgetall(table_key='h1'), {'k1': 'v1-y', 'k2': 'v2'})
 
-        self.assertEqual(L.hlen({'table_key': 'h1'}), {'num': '2'})
-        self.assertEqual(L.hcontains({'table_key': 'h1', 'key': 'k1'}),
-                         {'num': '1'})
-        self.assertEqual(L.hcontains({'table_key': 'h1', 'key': 'kx'}),
-                         {'num': '0'})
+        self.assertEqual(L.hlen(table_key='h1'), {'num': '2'})
+        self.assertEqual(L.hcontains(table_key='h1', key='k1'), {'num': '1'})
+        self.assertEqual(L.hcontains(table_key='h1', key='kx'), {'num': '0'})
 
         # Getting values from a non-existent hash returns empty response.
-        self.assertEqual(L.hgetall({'table_key': 'h2'}), {})
+        self.assertEqual(L.hgetall(table_key='h2'), {})
 
-    def test_script_list(self):
+    def test_script_list_items(self):
         self.assertEqual(self.db.script('list'), {})
 
         self.db.update(k1='v1', k2='v2', k3='v3')
