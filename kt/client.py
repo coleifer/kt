@@ -364,10 +364,10 @@ class TokyoTyrant(BaseClient):
         self._protocol.putnr(key, value)
 
     def setdup(self, key, value):
-        return self._protocol.putdup(key, value)
+        return self._protocol.misc_putdup(key, value)
 
     def setdupback(self, key, value):
-        return self._protocol.putdupback(key, value)
+        return self._protocol.misc_putdupback(key, value)
 
     def get_part(self, key, start=None, end=None):
         return self._protocol.misc_getpart(key, start or 0, end)
