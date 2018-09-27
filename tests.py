@@ -1,3 +1,4 @@
+import functools
 import os
 import sys
 import threading
@@ -271,10 +272,10 @@ class TestKyotoTycoonScripting(BaseTestCase):
     def test_script_list(self):
         L = self.db.lua
 
-        self.assertEqual(L.lpush(key='l1', value='i0'), {})
+        self.assertEqual(L.lrpush(key='l1', value='i0'), {})
         # Test appending items to list.
         for i in range(1, 5):
-            L.lpush(key='l1', value='i%s' % i)
+            L.lrpush(key='l1', value='i%s' % i)
 
         # Test accessing items by index.
         for i in range(5):
@@ -295,6 +296,37 @@ class TestKyotoTycoonScripting(BaseTestCase):
 
         self.assertEqual(L.lrpop(key='l1'), {'value': 'i3'})
         self.assertEqual(L.lrpop(key='l1'), {'value': 'i2-x'})
+
+    def test_script_list_ranges(self):
+        # Test getting ranges.
+        L = self.db.lua
+        for i in range(5):
+            L.lrpush(key='l1', value='i%s' % i)
+
+        R = functools.partial(L.lrange, key='l1')
+        all_items = dict((str(i), 'i%s' % i) for i in range(5))
+        self.assertEqual(R(), all_items)
+        self.assertEqual(R(start=0), all_items)
+        self.assertEqual(R(start=-5), all_items)
+        self.assertEqual(R(stop=5), all_items)
+
+        # Within bounds.
+        self.assertEqual(R(start=1, stop=4), {'1': 'i1', '2': 'i2', '3': 'i3'})
+        self.assertEqual(R(start=0, stop=1), {'0': 'i0'})
+        self.assertEqual(R(start=3), {'3': 'i3', '4': 'i4'})
+        self.assertEqual(R(stop=-3), {'0': 'i0', '1': 'i1'})
+        self.assertEqual(R(start=1, stop=-3), {'1': 'i1'})
+        self.assertEqual(R(start=3, stop=-1), {'3': 'i3'})
+        self.assertEqual(R(start=-1), {'4': 'i4'})
+        self.assertEqual(R(start=-2), {'3': 'i3', '4': 'i4'})
+
+        # Out-of-bounds or out-of-order.
+        self.assertEqual(R(start=5), {})
+        self.assertEqual(R(start=-6), {})
+        self.assertEqual(R(start=0, stop=0), {})
+        self.assertEqual(R(start=-1, stop=3), {})
+        self.assertEqual(R(start=3, stop=2), {})
+        self.assertEqual(R(start=1, stop=1), {})
 
     def test_script_hash(self):
         L = self.db.lua

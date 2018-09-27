@@ -464,14 +464,30 @@ end
 
 
 -- Redis-like LPUSH
--- accepts: { key, item }
+-- accepts: { key, value }
 -- returns: {}
-function lpush(inmap, outmap)
+function llpush(inmap, outmap)
   local fn = function(key, arr, inmap, outmap)
     local value = inmap.value
     if not value then
-      kt.log("system", "missing value parameter to lpush")
-      return kt.RVEINVALID
+      kt.log("system", "missing value parameter to llpush")
+      return nil, false
+    end
+    table.insert(arr, 1, value)
+    return arr, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+-- Redis-like RPUSH
+-- accepts: { key, value }
+-- returns: {}
+function lrpush(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local value = inmap.value
+    if not value then
+      kt.log("system", "missing value parameter to lrpush")
+      return nil, false
     end
     table.insert(arr, value)
     return arr, true
@@ -480,7 +496,40 @@ function lpush(inmap, outmap)
 end
 
 
--- Redis-like LINDEX -- zero-based!
+-- Redis-like LRANGE -- zero-based.
+-- accepts: { key, start, stop }
+-- returns: { i1, i2, ... }
+function lrange(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local arrsize = #arr
+    local start = tonumber(inmap.start or "0") + 1
+    if start < 1 then
+      start = arrsize + start
+      if start < 1 then
+        return nil, true
+      end
+    end
+
+    local stop = inmap.stop
+    if stop then
+      stop = tonumber(inmap.stop)
+      if stop < 0 then
+        stop = arrsize + stop
+      end
+    else
+      stop = arrsize
+    end
+
+    for i = start, stop do
+      outmap[i - 1] = arr[i]
+    end
+    return nil, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like LINDEX -- zero-based.
 -- accepts: { key, index }
 -- returns: { value }
 function lindex(inmap, outmap)
