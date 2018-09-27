@@ -120,17 +120,9 @@ class HttpProtocol(object):
         return (self._decode_response(r.content, r.headers['content-type']),
                 r.status_code)
 
-    def status(self, db=None):
-        resp, status = self.request('/status', {}, db)
-        return resp
-
     def report(self):
         resp, status = self.request('/report', {}, None)
         return resp
-
-    def clear(self, db=None):
-        resp, status = self.request('/clear', {}, db)
-        return status == 200
 
     def script(self, name, __data=None, **params):
         if __data is not None:
@@ -149,45 +141,35 @@ class HttpProtocol(object):
             accum[key[1:]] = self.decode_value(value)
         return accum
 
-    def get(self, key, db=None):
-        resp, status = self.request('/get', {'key': key}, db, (450,))
-        if status == 450:
-            return
-        value = resp[self.decode_key(b'value')]
-        return self.decode_value(value)
-
-    def ulog_list(self):
-        resp, status = self.request('/ulog_list', {}, None)
-        log_list = []
-        for filename, meta in resp.items():
-            size, ts_str = meta.decode('utf-8').split(':')
-            ts = datetime.datetime.fromtimestamp(int(ts_str) / 1e9)
-            log_list.append((filename, size, ts))
-        return log_list
-
-    def ulog_remove(self, max_dt=None):
-        max_dt = max_dt or datetime.datetime.now()
-        data = {'ts': str(int(max_dt.timestamp() * 1e9))}
-        resp, status = self.request('/ulog_remove', data, None)
+    def tune_replication(self, host=None, port=None, timestamp=None,
+                         interval=None):
+        data = {}
+        if host is not None:
+            data['host'] = host
+        if port is not None:
+            data['port'] = str(port)
+        if timestamp is not None:
+            data['ts'] = str(timestamp)
+        if interval is not None:
+            data['iv'] = str(interval)
+        resp, status = self.request('/tune_replication', data, None)
         return status == 200
 
-    def synchronize(self, hard=False, db=None):
-        data = {'hard': ''} if hard else {}
+    def status(self, db=None):
+        resp, status = self.request('/status', {}, db)
+        return resp
+
+    def clear(self, db=None):
+        resp, status = self.request('/clear', {}, db)
+        return status == 200
+
+    def synchronize(self, hard=False, command=None, db=None):
+        data = {}
+        if hard:
+            data['hard'] = ''
+        if command is not None:
+            data['command'] = command
         _, status = self.request('/synchronize', data, db)
-        return status == 200
-
-    def count(self, db=None):
-        resp = self.status(db)
-        return int(resp.get('count') or 0)
-
-    def size(self, db=None):
-        resp = self.status(db)
-        return int(resp.get('size') or 0)
-
-    def vacuum(self, step=0, db=None):
-        # If step > 0, the whole region is scanned.
-        data = {'step': str(step)} if step > 0 else {}
-        resp, status = self.request('/vacuum', data, db)
         return status == 200
 
     def _simple_write(self, cmd, key, value, db=None, expire_time=None):
@@ -209,52 +191,6 @@ class HttpProtocol(object):
     def append(self, key, value, db=None, expire_time=None):
         return self._simple_write('append', key, value, db, expire_time)
 
-    def remove(self, key, db=None):
-        resp, status = self.request('/remove', {'key': key}, db, (450,))
-        return status != 450
-
-    def check(self, key, db=None):
-        resp, status = self.request('/check', {'key': key}, db, (450,))
-        return status != 450
-
-    def set_bulk(self, data, db=0, expire_time=None):
-        accum = {}
-        if expire_time is not None:
-            accum['xt'] = str(expire_time)
-
-        # Keys must be prefixed by "_".
-        for key, value in data.items():
-            accum['_%s' % key] = self.encode_value(value)
-
-        resp, status = self.request('/set_bulk', accum, db)
-        return resp
-
-    def remove_bulk(self, keys, db=None):
-        resp, status = self.request('/remove_bulk', keys, db)
-        return int(resp.pop(self.decode_key(b'num')))
-
-    def seize(self, key, db=None):
-        resp, status = self.request('/seize', {'key': key}, db, (450,))
-        if status == 450:
-            return
-        value = resp[self.decode_key(b'value')]
-        return self.decode_value(value)
-
-    def cas(self, key, old_val, new_val, db=None, expire_time=None):
-        if old_val is None and new_val is None:
-            raise ValueError('old value and/or new value must be specified.')
-
-        data = {'key': key}
-        if old_val is not None:
-            data['oval'] = self.encode_value(old_val)
-        if new_val is not None:
-            data['nval'] = self.encode_value(new_val)
-        if expire_time is not None:
-            data['xt'] = str(expire_time)
-
-        resp, status = self.request('/cas', data, db, (450,))
-        return status != 450
-
     def increment(self, key, n=1, orig=None, db=None, expire_time=None):
         data = {'key': key, 'num': str(n)}
         if orig is not None:
@@ -273,6 +209,59 @@ class HttpProtocol(object):
         resp, status = self.request('/increment_double', data, db)
         return float(resp['num'])
 
+    def cas(self, key, old_val, new_val, db=None, expire_time=None):
+        if old_val is None and new_val is None:
+            raise ValueError('old value and/or new value must be specified.')
+
+        data = {'key': key}
+        if old_val is not None:
+            data['oval'] = self.encode_value(old_val)
+        if new_val is not None:
+            data['nval'] = self.encode_value(new_val)
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+
+        resp, status = self.request('/cas', data, db, (450,))
+        return status != 450
+
+    def remove(self, key, db=None):
+        resp, status = self.request('/remove', {'key': key}, db, (450,))
+        return status != 450
+
+    def get(self, key, db=None):
+        resp, status = self.request('/get', {'key': key}, db, (450,))
+        if status == 450:
+            return
+        value = resp[self.decode_key(b'value')]
+        return self.decode_value(value)
+
+    def check(self, key, db=None):
+        resp, status = self.request('/check', {'key': key}, db, (450,))
+        return status != 450
+
+    def seize(self, key, db=None):
+        resp, status = self.request('/seize', {'key': key}, db, (450,))
+        if status == 450:
+            return
+        value = resp[self.decode_key(b'value')]
+        return self.decode_value(value)
+
+    def set_bulk(self, data, db=0, expire_time=None):
+        accum = {}
+        if expire_time is not None:
+            accum['xt'] = str(expire_time)
+
+        # Keys must be prefixed by "_".
+        for key, value in data.items():
+            accum['_%s' % key] = self.encode_value(value)
+
+        resp, status = self.request('/set_bulk', accum, db)
+        return resp
+
+    def remove_bulk(self, keys, db=None):
+        resp, status = self.request('/remove_bulk', keys, db)
+        return int(resp.pop(self.decode_key(b'num')))
+
     def _do_bulk_command(self, cmd, params, db=None):
         resp, status = self.request(cmd, params, db)
 
@@ -287,6 +276,12 @@ class HttpProtocol(object):
 
     def get_bulk(self, keys, db=None):
         return self._do_bulk_command('/get_bulk', keys, db)
+
+    def vacuum(self, step=0, db=None):
+        # If step > 0, the whole region is scanned.
+        data = {'step': str(step)} if step > 0 else {}
+        resp, status = self.request('/vacuum', data, db)
+        return status == 200
 
     def _do_bulk_sorted_command(self, cmd, params, db=None):
         results = self._do_bulk_command(cmd, params, db)
@@ -311,3 +306,39 @@ class HttpProtocol(object):
         if max_keys is not None:
             data['max'] = str(max_keys)
         return self._do_bulk_sorted_command('/match_similar', data, db)
+
+    # TODO:
+    # cur_jump(DB, CUR, [key]) => 200 OK / 450 cursor invalidated
+    # cur_jump_back(DB, CUR, [key]) => 200 / 450, 501 => not implemented
+    # cur_step(CUR) => 200 / 450
+    # cur_step_back(CUR) => 200 / 450, 501 => not implemented
+    # cur_set_value(CUR, value, [step], [xt]) => 200 / 450
+    # cur_remove(CUR) => 200 / 450
+    # cur_get_key(CUR, [step]) => 200 / 450
+    # cur_get_value(CUR, [step]) => 200 / 450
+    # cur_get(CUR, [step], [xt]) => 200 / 450
+    # cur_seize(CUR, [xt]) => 200 / 450
+    # cur_delete(CUR) => 200 / 450
+
+    def ulog_list(self):
+        resp, status = self.request('/ulog_list', {}, None)
+        log_list = []
+        for filename, meta in resp.items():
+            size, ts_str = meta.decode('utf-8').split(':')
+            ts = datetime.datetime.fromtimestamp(int(ts_str) / 1e9)
+            log_list.append((filename, size, ts))
+        return log_list
+
+    def ulog_remove(self, max_dt=None):
+        max_dt = max_dt or datetime.datetime.now()
+        data = {'ts': str(int(max_dt.timestamp() * 1e9))}
+        resp, status = self.request('/ulog_remove', data, None)
+        return status == 200
+
+    def count(self, db=None):
+        resp = self.status(db)
+        return int(resp.get('count') or 0)
+
+    def size(self, db=None):
+        resp = self.status(db)
+        return int(resp.get('size') or 0)

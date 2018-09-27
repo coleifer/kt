@@ -385,6 +385,9 @@ class TokyoTyrant(BaseClient):
     def misc(self, cmd, args=None, update_log=True):
         return self._protocol.misc(cmd, args, update_log)
 
+    def count(self):
+        return self._protocol.rnum()
+
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.get_range(item.start, item.stop or None)
@@ -393,16 +396,9 @@ class TokyoTyrant(BaseClient):
 
     __setitem__ = set
     __delitem__ = remove
+    __contains__ = exists
+    __len__ = count
     update = set_bulk
-
-    def __contains__(self, key):
-        return self._protocol.vsiz(key) is not None
-
-    def __len__(self):
-        return self._protocol.rnum()
-
-    def count(self):
-        return self._protocol.rnum()
 
     @property
     def size(self):
