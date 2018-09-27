@@ -32,14 +32,21 @@ end
 
 -- Lock a key.
 function lock(key, value)
-  if not _lock(key) then return nil end
-  return "ok"
+  if _lock(key) then return "" end
 end
 
 -- Unlock a key.
 function unlock(key, value)
-  if not _unlock(key) then return nil end
-  return "ok"
+  if _unlock(key) then return "" end
+end
+
+-- Seize/pop implementation.
+function seize(key, value)
+  local res = _get(key)
+  if res ~= nil then
+    _out(key)
+    return res
+  end
 end
 
 
@@ -57,6 +64,7 @@ function split(key, value)
 end
 
 
+-- e.g. hash('md5', 'foo bar'), hash('crc32', 'checksum me')
 function hash(key, value)
   return _hash(key, value)
 end
