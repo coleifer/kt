@@ -68,6 +68,75 @@ function seize(key, value)
 end
 
 
+-- De-serialize and serialize a table database value to a lua table.
+function mapload(m)
+  local t = {}
+  local elems = _split(m)
+  for i = 1, #elems, 2 do
+    t[elems[i]] = elems[i + 1]
+  end
+  return t
+end
+
+
+function mapdump(t)
+  local res = ""
+  local glue = string.char(0)
+  local key, value
+  for key, value in pairs(t) do
+    res = res .. key .. glue .. value .. glue
+  end
+  return res
+end
+
+
+-- Table helpers for working with values in a table database.
+function table_get(key, value)
+  local tval = _get(key)
+  if tval ~= nil then
+    local tmap = mapload(tval)
+    return tmap[value] or ''
+  end
+  return ''
+end
+
+function table_update(key, value)
+  -- Value is assumed to be NULL-separated key/value.
+  local items = _split(value)
+  if #items < 2 then
+    _log('expected null-separated key/value pairs for for table_set()')
+  else
+    local tval = _get(key)
+    local tmap
+    if tval == nil then
+      tmap = {}
+    else
+      tmap = mapload(tval)
+    end
+    for i = 1, #items, 2 do
+      tmap[items[i]] = items[i + 1]
+    end
+    _put(key, mapdump(tmap))
+    return "true"
+  end
+  return "false"
+end
+
+function table_pop(key, value)
+  local tval = _get(key)
+  if tval ~= nil then
+    local tmap = mapload(tval)
+    local ret = tmap[value]
+    if ret ~= nil then
+      tmap[value] = nil
+      _put(key, mapdump(tmap))
+    end
+    return ret or ''
+  end
+  return ''
+end
+
+
 -- Split a string.
 function split(key, value)
   if #value < 1 then

@@ -331,8 +331,10 @@ class TokyoTyrant(BaseClient):
     def remove_bulk(self, keys):
         return self._protocol.misc_outlist(keys)
 
-    def script(self, name, key=None, value=None):
-        return self._protocol.ext(name, key, value)
+    def script(self, name, key=None, value=None, lock_records=False,
+               lock_all=False, encode_value=True, decode_result=False):
+        return self._protocol.ext(name, key, value, lock_records, lock_all,
+                                  encode_value, decode_result)
 
     def clear(self):
         return self._protocol.vanish()

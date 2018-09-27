@@ -751,14 +751,19 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return response.read_double()
 
     def ext(self, name, key=None, value=None, lock_records=False,
-               lock_all=False):
+            lock_all=False, encode_value=True, decode_result=False):
         cdef:
             bytes bname = _encode(name)
             bytes bkey = _encode(key or '')
-            bytes bval = self.encode_value(value or '')
+            bytes bval
             int opts = 0
             RequestBuffer request = self.request()
             TTResponseHandler response
+
+        if encode_value:
+            bval = self.encode_value(value or '')
+        else:
+            bval = _encode(value or '')
 
         if lock_records and lock_all:
             raise ValueError('cannot specify both record and global locking.')
@@ -785,6 +790,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return True
         elif resp == b'false':
             return False
+        if decode_result:
+            return self.decode_value(resp)
         return resp
 
     def sync(self):

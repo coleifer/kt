@@ -748,6 +748,47 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(self.db.script('queuesize', 'testqueue'), b'0')
 
 
+class TestTokyoTyrantScriptingTable(BaseTestCase):
+    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/tt.lua')
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {
+        'database': '/tmp/kt_tt.tct',
+        'serializer': TT_TABLE,
+        'server_args': ['-ext', lua_script]}
+
+    def test_script_with_table(self):
+        self.db['t1'] = {'k1': 'v1', 'k2': 'v2'}
+        self.db['t2'] = {'k2': 'v2', 'k3': 'v3'}
+        res = self.db.script('seize', 't2', encode_value=False,
+                             decode_result=True)
+        self.assertEqual(res, {'k2': 'v2', 'k3': 'v3'})
+
+        res = self.db.script('seize', 't2', encode_value=False,
+                             decode_result=True)
+        self.assertEqual(res, {})
+
+        res = self.db.script('table_get', 't1', 'k2', encode_value=False)
+        self.assertEqual(res, b'v2')
+
+        res = self.db.script('table_get', 't1', 'kx', encode_value=False)
+        self.assertEqual(res, b'')
+
+        res = self.db.script('table_pop', 't1', 'k2', encode_value=False)
+        self.assertEqual(res, b'v2')
+        res = self.db.script('table_pop', 't1', 'k2', encode_value=False)
+        self.assertEqual(res, b'')
+        self.assertEqual(self.db['t1'], {'k1': 'v1'})
+
+        self.db['t1'] = {'k1': 'v1', 'k2': 'v2'}
+        res = self.db.script('table_update', 't1', {'k1': 'v1-x', 'k4': 'v4'})
+        self.assertTrue(res)
+        self.assertEqual(self.db['t1'], {'k1': 'v1-x', 'k2': 'v2', 'k4': 'v4'})
+
+        res = self.db.script('table_update', 't3', {'k1': 'v1z', 'k2': 'v2y'})
+        self.assertTrue(res)
+        self.assertEqual(self.db['t3'], {'k1': 'v1z', 'k2': 'v2y'})
+
+
 class TestTokyoTyrantSerializers(TestKyotoTycoonSerializers):
     server = EmbeddedTokyoTyrantServer
     server_kwargs = {'database': '*'}
