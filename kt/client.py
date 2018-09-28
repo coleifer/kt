@@ -200,9 +200,9 @@ class KyotoTycoon(BaseClient):
     def ulog_remove(self, max_dt):
         return self._protocol_http.ulog_remove(max_dt)
 
-    def synchronize(self, hard=False, db=None):
+    def synchronize(self, hard=False, command=None, db=None):
         db = self._default_db if db is None else db
-        return self._protocol_http.synchronize(hard, db)
+        return self._protocol_http.synchronize(hard, command, db)
 
     def vacuum(self, step=0, db=None):
         db = self._default_db if db is None else db
