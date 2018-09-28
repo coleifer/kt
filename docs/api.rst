@@ -32,6 +32,7 @@ Serializers
     Special serializer for use with TokyoTyrant's remote table database. Values
     are represented as dictionaries.
 
+
 Kyoto Tycoon client
 -------------------
 
@@ -689,6 +690,187 @@ Tokyo Tyrant client
         :return: list of all key/value tuples in database
         :rtype: list
 
+    .. py:method:: set_index(name, index_type, check_exists=False)
+
+        :param str name: column name to index
+        :param int index_type: see :ref:`index-types` for values
+        :param bool check_exists: if true, an error will be raised if the index
+            already exists.
+        :return: boolean indicating success
+
+        Create an index on the given column in a table database.
+
+    .. py:method:: optimize_index(name)
+
+        :param str name: column name index to optimize
+        :return: boolean indicating success
+
+        Optimize the index on a given column.
+
+    .. py:method:: delete_index(name)
+
+        :param str name: column name index to delete
+        :return: boolean indicating success
+
+        Delete the index on a given column.
+
+    .. py:method:: search(expressions, cmd=None)
+
+        :param list expressions: zero or more search expressions
+        :param str cmd: extra command to apply to search results
+        :return: varies depending on ``cmd``.
+
+        Perform a search on a table database. Rather than call this method
+        directly, it is recommended that you use the :py:class:`QueryBuilder`
+        to construct and execute table queries.
+
+    .. py:method:: genuid()
+
+        :return: integer id
+
+        Generate a unique ID.
+
+
+.. py:class:: QueryBuilder
+
+    Construct and execute table queries.
+
+    .. py:method:: filter(column, op, value)
+
+        :param str column: column name to filter on
+        :param int op: operation, see :ref:`filter-types` for available values
+        :param value: value for filter expression
+
+        Add a filter expression to the query.
+
+    .. py:method:: order_by(column, ordering=None)
+
+        :param str column: column name to order by
+        :param int ordering: ordering method, defaults to lexical ordering.
+            See :ref:`ordering-types` for available values.
+
+        Specify ordering of query results.
+
+    .. py:method:: limit(limit=None)
+
+        :param int limit: maximum number of results
+
+        Limit the number of results returned by query.
+
+    .. py:method:: offset(offset=None)
+
+        :param int offset: number of results to skip over.
+
+        Skip over results returned by query.
+
+    .. py:method:: execute(client)
+
+        :param TokyoTyrant client: database client
+        :return: list of keys matching query criteria
+        :rtype: list
+
+        Execute the query and return a list of the keys of matching records.
+
+    .. py:method:: delete(client)
+
+        :param TokyoTyrant client: database client
+        :return: boolean indicating success
+
+        Delete records that match the query criteria.
+
+    .. py:method:: get(client)
+
+        :param TokyoTyrant client: database client
+        :return: list of 2-tuples consisting of ``key, value``.
+        :rtype list:
+
+        Execute query and return a list of keys and values for records matching
+        the query criteria.
+
+    .. py:method:: count(client)
+
+        :param TokyoTyrant client: database client
+        :return: number of query results
+
+        Return count of matching records.
+
+
+.. _index-types:
+
+Index types
+^^^^^^^^^^^
+
+.. py:data:: INDEX_STR
+
+.. py:data:: INDEX_NUM
+
+.. py:data:: INDEX_TOKEN
+
+.. py:data:: INDEX_QGRAM
+
+.. _filter-types:
+
+Filter types
+^^^^^^^^^^^^
+
+.. py:data:: OP_STR_EQ
+
+.. py:data:: OP_STR_CONTAINS
+
+.. py:data:: OP_STR_STARTSWITH
+
+.. py:data:: OP_STR_ENDSWITH
+
+.. py:data:: OP_STR_ALL
+
+.. py:data:: OP_STR_ANY
+
+.. py:data:: OP_STR_ANYEXACT
+
+.. py:data:: OP_STR_REGEX
+
+.. py:data:: OP_NUM_EQ
+
+.. py:data:: OP_NUM_GT
+
+.. py:data:: OP_NUM_GE
+
+.. py:data:: OP_NUM_LT
+
+.. py:data:: OP_NUM_LE
+
+.. py:data:: OP_NUM_BETWEEN
+
+.. py:data:: OP_NUM_ANYEXACT
+
+.. py:data:: OP_FTS_PHRASE
+
+.. py:data:: OP_FTS_ALL
+
+.. py:data:: OP_FTS_ANY
+
+.. py:data:: OP_FTS_EXPRESSION
+
+.. py:data:: OP_NEGATE
+
+    Combine with other operand using bitwise-or to negate the filter.
+
+.. py:data:: OP_NOINDEX
+
+    Combine with other operand using bitwise-or to prevent using an index.
+
+.. _ordering-types:
+
+Ordering types
+^^^^^^^^^^^^^^
+
+.. py:data:: ORDER_STR_ASC
+
+.. py:data:: ORDER_STR_DESC
+
+.. py:data:: ORDER_NUM_ASC
+
+.. py:data:: ORDER_NUM_DESC
 
 Embedded Servers
 ----------------
