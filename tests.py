@@ -63,6 +63,74 @@ class BaseTestCase(unittest.TestCase):
             raise NotImplementedError
 
 
+class TestListSerialization(unittest.TestCase):
+    def setUp(self):
+        db = KyotoTycoon()
+        self.p = db._protocol
+
+    def assertSerializeDict(self, dictobj):
+        dictstr = self.p.serialize_dict(dictobj)
+        self.assertEqual(self.p.deserialize_dict(dictstr), dictobj)
+
+    def assertSerializeList(self, listobj):
+        liststr = self.p.serialize_list(listobj)
+        self.assertEqual(self.p.deserialize_list(liststr), listobj)
+
+    def test_dict_serialize_deserialize(self):
+        self.assertSerializeDict({'k1': 'v1', 'k2': 'v2'})
+        self.assertSerializeDict({'k1': '', '': 'v2'})
+        self.assertSerializeDict({'': ''})
+        self.assertSerializeDict({'a' * 128: 'b' * 1024,
+                                  'c' * 1024: 'd' * 1024 * 16,
+                                  'e' * 1024 * 16: 'f' * 1024 * 1024,
+                                  'g': 'g' * 128})
+        self.assertSerializeDict({})
+
+    def test_dict_serialization(self):
+        serialize, deserialize = self.p.serialize_dict, self.p.deserialize_dict
+
+        data = {'foo': 'baze'}
+        dictstr = serialize(data)
+        self.assertEqual(dictstr, b'\x03\x04foobaze')
+        self.assertEqual(deserialize(dictstr), data)
+
+        dictobj = deserialize(dictstr, decode_values=False)
+        self.assertEqual(dictobj, {'foo': b'baze'})
+
+        # Test edge cases.
+        data = {'': ''}
+        self.assertEqual(serialize(data), b'\x00\x00')
+
+        self.assertEqual(serialize({}), b'')
+        self.assertEqual(deserialize(b''), {})
+
+    def test_list_serialize_deserialize(self):
+        self.assertSerializeList(['foo', 'bar', 'nugget', 'baze'])
+        self.assertSerializeList(['', 'zaizee', ''])
+        self.assertSerializeList(['', '', ''])
+        self.assertSerializeList(['a' * 128, 'b' * 1024 * 16,
+                                  'c' * 1024 * 1024, 'd' * 1024])
+        self.assertSerializeList([])
+
+    def test_list_serialization(self):
+        serialize, deserialize = self.p.serialize_list, self.p.deserialize_list
+        # Simple tests.
+        data = ['foo', 'baze', 'nugget', 'bar']
+        liststr = serialize(data)
+        self.assertEqual(liststr, b'\x03foo\x04baze\x06nugget\x03bar')
+        self.assertEqual(deserialize(liststr), data)
+
+        listobj = deserialize(liststr, decode_values=False)
+        self.assertEqual(listobj, [b'foo', b'baze', b'nugget', b'bar'])
+
+        # Test edge cases.
+        data = ['', 'foo', '']
+        self.assertEqual(serialize(data), b'\x00\x03foo\x00')
+
+        self.assertEqual(serialize([]), b'')
+        self.assertEqual(deserialize(b''), [])
+
+
 class KyotoTycoonTests(object):
     def test_basic_operations(self):
         self.assertEqual(len(self.db), 0)
@@ -283,7 +351,7 @@ class TestKyotoTycoonScripting(BaseTestCase):
 
         # Invalid index returns empty result set.
         self.assertEqual(L.lindex(key='l1', index=6), {})
-        self.assertEqual(L.lindex(key='l1', index=-1), {})
+        self.assertEqual(L.lindex(key='l1', index=-1), {'value': 'i4'})
 
         # Get length of list, pop last item, verify length change.
         self.assertEqual(L.llen(key='l1'), {'num': '5'})
@@ -295,7 +363,28 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.lindex(key='l1', index=2), {'value': 'i2-x'})
 
         self.assertEqual(L.lrpop(key='l1'), {'value': 'i3'})
+        self.assertEqual(L.llpop(key='l1'), {'value': 'i0'})
         self.assertEqual(L.lrpop(key='l1'), {'value': 'i2-x'})
+        self.assertEqual(L.llpop(key='l1'), {'value': 'i1'})
+
+        self.assertEqual(L.llen(key='l1'), {'num': '0'})
+        self.assertEqual(L.llpop(key='l1'), {})
+        self.assertEqual(L.lrpop(key='l1'), {})
+
+    def test_list_insert(self):
+        # Test getting ranges.
+        L = self.db.lua
+        for i in range(5):
+            L.lrpush(key='l1', value='i%s' % i)
+
+        R = functools.partial(L.lrange, key='l1')
+        L.linsert(key='l1', index=1, value='i0.5')
+        self.assertEqual(R(start=0, stop=3), {'0': 'i0', '1': 'i0.5',
+                                              '2': 'i1'})
+
+        L.linsert(key='l1', index=-1, value='i3.5')
+        self.assertEqual(R(), {'0': 'i0', '1': 'i0.5', '2': 'i1', '3': 'i2',
+                               '4': 'i3', '5': 'i3.5', '6': 'i4'})
 
     def test_script_list_ranges(self):
         # Test getting ranges.

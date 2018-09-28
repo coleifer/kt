@@ -496,6 +496,17 @@ function lrpush(inmap, outmap)
 end
 
 
+function _normalize_index(array_len, idx)
+  local index = tonumber(idx or "0") + 1
+  if index < 1 then
+    index = array_len + index
+    if index < 1 then return nil, false end
+  end
+  if index > array_len then return nil, false end
+  return index, true
+end
+
+
 -- Redis-like LRANGE -- zero-based.
 -- accepts: { key, start, stop }
 -- returns: { i1, i2, ... }
@@ -512,7 +523,7 @@ function lrange(inmap, outmap)
 
     local stop = inmap.stop
     if stop then
-      stop = tonumber(inmap.stop)
+      stop = tonumber(stop)
       if stop < 0 then
         stop = arrsize + stop
       end
@@ -534,10 +545,45 @@ end
 -- returns: { value }
 function lindex(inmap, outmap)
   local fn = function(key, arr, inmap, outmap)
-    local index = tonumber(inmap.index or '0') + 1
-    local val = arr[index]
-    outmap.value = arr[index]
+    local index, ok = _normalize_index(#arr, inmap.index)
+    if ok then
+      local val = arr[index]
+      outmap.value = arr[index]
+    end
     return nil, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- LINSERT -- zero-based.
+-- accepts: { key, index, value }
+-- returns: {}
+function linsert(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    local index, ok = _normalize_index(#arr, inmap.index)
+    if not ok then
+      return nil, false
+    end
+    if not inmap.value then
+      kt.log("info", "missing value for linsert")
+      return nil, false
+    end
+    table.insert(arr, index, inmap.value)
+    return arr, true
+  end
+  return lkv(inmap, outmap, fn)
+end
+
+
+-- Redis-like LPOP -- removes first elem.
+-- accepts: { key }
+-- returns: { value }
+function llpop(inmap, outmap)
+  local fn = function(key, arr, inmap, outmap)
+    outmap.value = arr[1]
+    table.remove(arr, 1)
+    return arr, true
   end
   return lkv(inmap, outmap, fn)
 end
