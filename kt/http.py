@@ -40,6 +40,7 @@ def decode_from_content_type(content_type):
 
 class HttpProtocol(object):
     _content_type = 'text/tab-separated-values; colenc=B'
+    cursor_id = 0
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
                  encode_value=None, decode_value=None, timeout=None):
@@ -307,18 +308,84 @@ class HttpProtocol(object):
             data['max'] = str(max_keys)
         return self._do_bulk_sorted_command('/match_similar', data, db)
 
-    # TODO:
-    # cur_jump(DB, CUR, [key]) => 200 OK / 450 cursor invalidated
-    # cur_jump_back(DB, CUR, [key]) => 200 / 450, 501 => not implemented
-    # cur_step(CUR) => 200 / 450
-    # cur_step_back(CUR) => 200 / 450, 501 => not implemented
-    # cur_set_value(CUR, value, [step], [xt]) => 200 / 450
-    # cur_remove(CUR) => 200 / 450
-    # cur_get_key(CUR, [step]) => 200 / 450
-    # cur_get_value(CUR, [step]) => 200 / 450
-    # cur_get(CUR, [step], [xt]) => 200 / 450
-    # cur_seize(CUR, [xt]) => 200 / 450
-    # cur_delete(CUR) => 200 / 450
+    def _cursor_command(self, cmd, cursor_id, data, db=None):
+        data['CUR'] = cursor_id
+        resp, status = self.request('/%s' % cmd, data, db, (450, 501))
+        if status == 501:
+            raise NotImplementedError('%s is not supported' % cmd)
+        return resp, status
+
+    def cur_jump(self, cursor_id, key=None, db=None):
+        data = {'key': key} if key else {}
+        resp, s = self._cursor_command('cur_jump', cursor_id, data, db)
+        return s == 200
+
+    def cur_jump_back(self, cursor_id, key=None, db=None):
+        data = {'key': key} if key else {}
+        resp, s = self._cursor_command('cur_jump_back', cursor_id, data, db)
+        return s == 200
+
+    def cur_step(self, cursor_id):
+        resp, status = self._cursor_command('cur_step', cursor_id, {})
+        return status == 200
+
+    def cur_step_back(self, cursor_id):
+        resp, status = self._cursor_command('cur_step_back', cursor_id, {})
+        return status == 200
+
+    def cur_set_value(self, cursor_id, value, step=False, expire_time=None):
+        data = {'value': self.encode_value(value)}
+        if expire_time is not None:
+            data['xt'] = str(expire_time)
+        if step:
+            data['step'] = ''
+        resp, status = self._cursor_command('cur_set_value', cursor_id, data)
+        return status == 200
+
+    def cur_remove(self, cursor_id):
+        resp, status = self._cursor_command('cur_remove', cursor_id, {})
+        return status == 200
+
+    def cur_get_key(self, cursor_id, step=False):
+        data = {'step': ''} if step else {}
+        resp, status = self._cursor_command('cur_get_key', cursor_id, data)
+        if status == 450:
+            return
+        return self.decode_key(resp[self.decode_key(b'key')])
+
+    def cur_get_value(self, cursor_id, step=False):
+        data = {'step': ''} if step else {}
+        resp, status = self._cursor_command('cur_get_value', cursor_id, data)
+        if status == 450:
+            return
+        return self.decode_value(resp[self.decode_key(b'value')])
+
+    def cur_get(self, cursor_id, step=False):
+        data = {'step': ''} if step else {}
+        resp, status = self._cursor_command('cur_get', cursor_id, data)
+        if status == 450:
+            return
+        key = self.decode_key(resp[self.decode_key(b'key')])
+        value = self.decode_key(resp[self.decode_key(b'value')])
+        return (key, value)
+
+    def cur_seize(self, cursor_id, step=False):
+        resp, status = self._cursor_command('cur_seize', cursor_id, {})
+        if status == 450:
+            return
+        key = self.decode_key(resp[self.decode_key(b'key')])
+        value = self.decode_key(resp[self.decode_key(b'value')])
+        return (key, value)
+
+    def cur_delete(self, cursor_id):
+        resp, status = self._cursor_command('cur_delete', cursor_id, {})
+        return status == 200
+
+    def cursor(self, cursor_id=None, db=None):
+        if cursor_id is None:
+            HttpProtocol.cursor_id += 1
+            cursor_id = HttpProtocol.cursor_id
+        return Cursor(self, cursor_id, db)
 
     def ulog_list(self):
         resp, status = self.request('/ulog_list', {}, None)
@@ -342,3 +409,83 @@ class HttpProtocol(object):
     def size(self, db=None):
         resp = self.status(db)
         return int(resp.get('size') or 0)
+
+
+class Cursor(object):
+    def __init__(self, protocol, cursor_id, db=None):
+        self.protocol = protocol
+        self.cursor_id = cursor_id
+        self.db = db
+        self._valid = False
+
+    def __iter__(self):
+        if not self._valid:
+            self.jump()
+        return self
+
+    def is_valid(self):
+        return self._valid
+
+    def jump(self, key=None):
+        self._valid = self.protocol.cur_jump(self.cursor_id, key, self.db)
+        return self._valid
+
+    def jump_back(self, key=None):
+        self._valid = self.protocol.cur_jump_back(self.cursor_id, key, self.db)
+        return self._valid
+
+    def step(self):
+        self._valid = self.protocol.cur_step(self.cursor_id)
+        return self._valid
+
+    def step_back(self):
+        self._valid = self.protocol.cur_step_back(self.cursor_id)
+        return self._valid
+
+    def key(self):
+        if self._valid:
+            return self.protocol.cur_get_key(self.cursor_id)
+
+    def value(self):
+        if self._valid:
+            return self.protocol.cur_get_value(self.cursor_id)
+
+    def get(self):
+        if self._valid:
+            return self.protocol.cur_get(self.cursor_id)
+
+    def set_value(self, value):
+        if self._valid:
+            if not self.protocol.cur_set_value(self.cursor_id, value):
+                self._valid = False
+        return self._valid
+
+    def remove(self):
+        if self._valid:
+            if not self.protocol.cur_remove(self.cursor_id):
+                self._valid = False
+        return self._valid
+
+    def seize(self):
+        if self._valid:
+            kv = self.protocol.cur_seize(self.cursor_id)
+            if kv is None:
+                self._valid = False
+            return kv
+
+    def close(self):
+        if self._valid and self.protocol.cur_delete(self.cursor_id):
+            self._valid = False
+            return True
+        return False
+
+    def __next__(self):
+        if not self._valid:
+            raise StopIteration
+        kv = self.protocol.cur_get(self.cursor_id)
+        if kv is None:
+            self._valid = False
+            raise StopIteration
+        elif not self.step():
+            self._valid = False
+        return kv

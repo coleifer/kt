@@ -187,6 +187,9 @@ class KyotoTycoonTests(object):
         self.assertEqual(sorted(list(self.db)), ['k2', 'k3', 'key'])
         del self.db['k3']
         self.assertEqual(sorted(list(self.db.keys())), ['k2', 'key'])
+        self.assertEqual(sorted(list(self.db.values())), ['baz', 'v2'])
+        self.assertEqual(sorted(list(self.db.items())),
+                         [('k2', 'v2'), ('key', 'baz')])
 
         # Test matching.
         self.assertEqual(sorted(self.db.match_prefix('k')), ['k2', 'key'])
@@ -217,6 +220,99 @@ class TestKyotoTycoonHash(KyotoTycoonTests, BaseTestCase):
 class TestKyotoTycoonBTree(KyotoTycoonTests, BaseTestCase):
     server = EmbeddedServer
     server_kwargs = {'database': '%'}
+
+
+class TestKyotoTycoonCursor(BaseTestCase):
+    server = EmbeddedServer
+    server_kwargs = {'database': '%'}
+
+    def setUp(self):
+        super(TestKyotoTycoonCursor, self).setUp()
+        self.db.update({'k1': 'v1', 'k2': 'v2', 'k3': 'v3', 'k4': 'v4'})
+
+    def test_multiple_cursors(self):
+        c1 = self.db.cursor()
+        c2 = self.db.cursor()
+        c3 = self.db.cursor()
+        self.assertTrue(c1.jump('k1'))
+        self.assertTrue(c2.jump('k2'))
+        self.assertTrue(c3.jump('k3'))
+        self.assertEqual(c1.get(), ('k1', 'v1'))
+        self.assertEqual(c2.get(), ('k2', 'v2'))
+        self.assertEqual(c3.get(), ('k3', 'v3'))
+
+        self.assertTrue(c1.step())
+        self.assertEqual(c1.get(), ('k2', 'v2'))
+        self.assertEqual(c1.seize(), ('k2', 'v2'))
+        self.assertEqual(c2.get(), ('k3', 'v3'))
+        self.assertEqual(c2.seize(), ('k3', 'v3'))
+        for c in (c1, c2, c3):
+            self.assertEqual(c.get(), ('k4', 'v4'))
+        self.assertTrue(c3.remove())
+        for c in (c1, c2, c3):
+            self.assertTrue(c.get() is None)
+
+        c1.jump()
+        self.assertEqual(c1.get(), ('k1', 'v1'))
+        self.assertTrue(c1.remove())
+        self.assertFalse(c2.jump())
+
+    def test_cursor_movement(self):
+        cursor = self.db.cursor()
+        self.assertEqual(list(cursor), [('k1', 'v1'), ('k2', 'v2'),
+                                        ('k3', 'v3'), ('k4', 'v4')])
+
+        # Jumping in-between moves to closest without going under.
+        self.assertTrue(cursor.jump('k1x'))
+        self.assertEqual(cursor.key(), 'k2')
+        self.assertEqual(cursor.value(), 'v2')
+
+        # Jumping backwards in-between moves to closest while going over.
+        self.assertTrue(cursor.jump_back('k2x'))
+        self.assertEqual(cursor.key(), 'k2')
+        self.assertEqual(cursor.value(), 'v2')
+
+        # We cannot jump past the last record, but we can jump below the first.
+        # Similarly, we can't step_back prior to the first record.
+        self.assertFalse(cursor.jump('k5'))
+        self.assertTrue(cursor.jump('k0'))
+        self.assertEqual(cursor.key(), 'k1')
+        self.assertFalse(cursor.step_back())
+
+        # We cannot jump_back prior to the first record, but we can jump_back
+        # from after the last. Similarly, we can't step past the last record.
+        self.assertFalse(cursor.jump_back('k0'))
+        self.assertTrue(cursor.jump_back('k5'))
+        self.assertEqual(cursor.key(), 'k4')
+        self.assertFalse(cursor.step())
+
+    def test_cursor_write(self):
+        cursor = self.db.cursor()
+        cursor.jump('k2')
+
+        self.assertTrue(cursor.set_value('v2-x'))
+        self.assertEqual(cursor.get(), ('k2', 'v2-x'))
+        self.assertEqual(self.db['k2'], 'v2-x')
+        self.assertTrue(cursor.remove())
+        self.assertEqual(cursor.get(), ('k3', 'v3'))
+        self.assertFalse('k2' in self.db)
+        self.assertTrue(cursor.step_back())
+        self.assertEqual(cursor.get(), ('k1', 'v1'))
+
+        self.assertEqual(cursor.seize(), ('k1', 'v1'))
+        self.assertTrue(cursor.seize() is None)
+        self.assertFalse(cursor.is_valid())
+
+        self.assertTrue(cursor.jump())
+        self.assertEqual(cursor.seize(), ('k3', 'v3'))
+        self.assertTrue(cursor.jump_back())
+        self.assertEqual(cursor.get(), ('k4', 'v4'))
+
+        self.assertEqual(list(cursor), [('k4', 'v4')])
+        self.assertEqual(list(cursor), [('k4', 'v4')])
+        self.assertTrue(cursor.jump_back())
+        self.assertTrue(cursor.remove())
+        self.assertEqual(list(cursor), [])
 
 
 class TestKyotoTycoonSerializers(BaseTestCase):

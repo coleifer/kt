@@ -282,9 +282,36 @@ class KyotoTycoon(BaseClient):
         return self._protocol_http.match_similar(origin, distance, max_keys,
                                                  db)
 
-    def keys(self, db=None):
+    def cursor(self, db=None, cursor_id=None):
         db = self._default_db if db is None else db
-        return self.match_prefix('', db=db)
+        return self._protocol_http.cursor(cursor_id, db)
+
+    def keys(self, db=None):
+        cursor = self.cursor(db=db)
+        cursor.jump()
+        while True:
+            key = cursor.key()
+            if key is None: return
+            yield key
+            if not cursor.step(): return
+
+    def values(self, db=None):
+        cursor = self.cursor(db=db)
+        cursor.jump()
+        while True:
+            value = cursor.value()
+            if value is None: return
+            yield value
+            if not cursor.step(): return
+
+    def items(self, db=None):
+        cursor = self.cursor(db=db)
+        cursor.jump()
+        while True:
+            kv = cursor.get()
+            if kv is None: return
+            yield kv
+            if not cursor.step(): return
 
     def __iter__(self):
         return iter(self.keys())
