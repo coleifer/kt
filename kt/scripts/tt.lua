@@ -168,6 +168,12 @@ function ptime(key, value)
 end
 
 
+function getdate(key, value)
+  -- Verify os module is available.
+  return os.date("%Y-%m-%dT%H:%M:%S")
+end
+
+
 function glob(key, value)
   local paths = _glob(key)
   local res = ""
