@@ -282,9 +282,6 @@ class TestKyotoTycoonScripting(BaseTestCase):
         'database': '%',
         'server_args': ['-scr', lua_script]}
 
-    def test_script_list(self):
-        L = self.db.lua
-
     def test_script_set(self):
         L = self.db.lua
 
@@ -416,6 +413,39 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(R(start=-1, stop=3), {})
         self.assertEqual(R(start=3, stop=2), {})
         self.assertEqual(R(start=1, stop=1), {})
+
+    def test_python_list_integration(self):
+        L = self.db.lua
+        data = ['foo', 'a' * 1024, '', 'b' * 1024 * 32, 'c']
+
+        self.db['l1'] = self.db._protocol.serialize_list(data)
+        self.assertEqual(L.llen(key='l1'), {'num': '5'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'c'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'b' * 1024 * 32})
+        self.assertEqual(L.lrpop(key='l1'), {'value': ''})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'a' * 1024})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'foo'})
+
+        for item in data:
+            L.lrpush(key='l1', value=item)
+
+        self.assertEqual(L.lrange(key='l1'), dict((str(i), data[i])
+                                                  for i in range(len(data))))
+
+    def test_python_dict_integration(self):
+        L = self.db.lua
+        data = {'a' * 64: 'b' * 128, 'c' * 1024: 'd' * 1024 * 32,
+                'e' * 256: 'f' * 1024 * 1024, 'g': ''}
+
+        self.db['h1'] = self.db._protocol.serialize_dict(data)
+        self.assertEqual(L.hgetall(table_key='h1'), data)
+        self.assertEqual(L.hget(table_key='h1', key='e' * 256),
+                         {'value': 'f' * 1024 * 1024})
+        self.assertTrue(L.hcontains(table_key='h1', key='a' * 64))
+        del self.db['h1']
+
+        L.hmset(table_key='h1', **data)
+        self.assertEqual(L.hgetall(table_key='h1'), data)
 
     def test_script_hash(self):
         L = self.db.lua
