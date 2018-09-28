@@ -63,74 +63,6 @@ class BaseTestCase(unittest.TestCase):
             raise NotImplementedError
 
 
-class TestListSerialization(unittest.TestCase):
-    def setUp(self):
-        db = KyotoTycoon()
-        self.p = db._protocol
-
-    def assertSerializeDict(self, dictobj):
-        dictstr = self.p.serialize_dict(dictobj)
-        self.assertEqual(self.p.deserialize_dict(dictstr), dictobj)
-
-    def assertSerializeList(self, listobj):
-        liststr = self.p.serialize_list(listobj)
-        self.assertEqual(self.p.deserialize_list(liststr), listobj)
-
-    def test_dict_serialize_deserialize(self):
-        self.assertSerializeDict({'k1': 'v1', 'k2': 'v2'})
-        self.assertSerializeDict({'k1': '', '': 'v2'})
-        self.assertSerializeDict({'': ''})
-        self.assertSerializeDict({'a' * 128: 'b' * 1024,
-                                  'c' * 1024: 'd' * 1024 * 16,
-                                  'e' * 1024 * 16: 'f' * 1024 * 1024,
-                                  'g': 'g' * 128})
-        self.assertSerializeDict({})
-
-    def test_dict_serialization(self):
-        serialize, deserialize = self.p.serialize_dict, self.p.deserialize_dict
-
-        data = {'foo': 'baze'}
-        dictstr = serialize(data)
-        self.assertEqual(dictstr, b'\x03\x04foobaze')
-        self.assertEqual(deserialize(dictstr), data)
-
-        dictobj = deserialize(dictstr, decode_values=False)
-        self.assertEqual(dictobj, {'foo': b'baze'})
-
-        # Test edge cases.
-        data = {'': ''}
-        self.assertEqual(serialize(data), b'\x00\x00')
-
-        self.assertEqual(serialize({}), b'')
-        self.assertEqual(deserialize(b''), {})
-
-    def test_list_serialize_deserialize(self):
-        self.assertSerializeList(['foo', 'bar', 'nugget', 'baze'])
-        self.assertSerializeList(['', 'zaizee', ''])
-        self.assertSerializeList(['', '', ''])
-        self.assertSerializeList(['a' * 128, 'b' * 1024 * 16,
-                                  'c' * 1024 * 1024, 'd' * 1024])
-        self.assertSerializeList([])
-
-    def test_list_serialization(self):
-        serialize, deserialize = self.p.serialize_list, self.p.deserialize_list
-        # Simple tests.
-        data = ['foo', 'baze', 'nugget', 'bar']
-        liststr = serialize(data)
-        self.assertEqual(liststr, b'\x03foo\x04baze\x06nugget\x03bar')
-        self.assertEqual(deserialize(liststr), data)
-
-        listobj = deserialize(liststr, decode_values=False)
-        self.assertEqual(listobj, [b'foo', b'baze', b'nugget', b'bar'])
-
-        # Test edge cases.
-        data = ['', 'foo', '']
-        self.assertEqual(serialize(data), b'\x00\x03foo\x00')
-
-        self.assertEqual(serialize([]), b'')
-        self.assertEqual(deserialize(b''), [])
-
-
 class KyotoTycoonTests(object):
     def test_basic_operations(self):
         self.assertEqual(len(self.db), 0)
@@ -203,6 +135,14 @@ class KyotoTycoonTests(object):
         self.assertEqual(self.db.incr('n', 3), 4)
         self.assertEqual(self.db.incr_double('nd'), 1.)
         self.assertEqual(self.db.incr_double('nd', 2.5), 3.5)
+
+    def test_get_raw(self):
+        self.db['k1'] = b'v1'
+        self.db['k2'] = b'\xff\x00\xff'
+        self.assertEqual(self.db.get_raw('k1'), b'v1')
+        self.assertEqual(self.db.get_raw('k2'), b'\xff\x00\xff')
+        self.assertEqual(self.db.get_bulk_raw(['k1', 'k2']), {
+            'k1': b'v1', 'k2': b'\xff\x00\xff'})
 
     def test_large_read_write(self):
         long_str = 'a' * (1024 * 1024 * 32)  # 32MB string.
@@ -525,6 +465,8 @@ class TestKyotoTycoonScripting(BaseTestCase):
         for item in data:
             L.lrpush(key='l1', value=item)
 
+        raw_data = self.db.get_raw('l1')
+        self.assertEqual(self.db._protocol.deserialize_list(raw_data), data)
         self.assertEqual(L.lrange(key='l1'), dict((str(i), data[i])
                                                   for i in range(len(data))))
 
@@ -541,6 +483,8 @@ class TestKyotoTycoonScripting(BaseTestCase):
         del self.db['h1']
 
         L.hmset(table_key='h1', **data)
+        raw_data = self.db.get_raw('h1')
+        self.assertEqual(self.db._protocol.deserialize_dict(raw_data), data)
         self.assertEqual(L.hgetall(table_key='h1'), data)
 
     def test_script_hash(self):
@@ -778,6 +722,74 @@ class TestMultipleThreads(BaseTestCase):
         [t.join() for t in threads]
 
 
+class TestArrayMapSerialization(unittest.TestCase):
+    def setUp(self):
+        db = KyotoTycoon()
+        self.p = db._protocol
+
+    def assertSerializeDict(self, dictobj):
+        dictstr = self.p.serialize_dict(dictobj)
+        self.assertEqual(self.p.deserialize_dict(dictstr), dictobj)
+
+    def assertSerializeList(self, listobj):
+        liststr = self.p.serialize_list(listobj)
+        self.assertEqual(self.p.deserialize_list(liststr), listobj)
+
+    def test_dict_serialize_deserialize(self):
+        self.assertSerializeDict({'k1': 'v1', 'k2': 'v2'})
+        self.assertSerializeDict({'k1': '', '': 'v2'})
+        self.assertSerializeDict({'': ''})
+        self.assertSerializeDict({'a' * 128: 'b' * 1024,
+                                  'c' * 1024: 'd' * 1024 * 16,
+                                  'e' * 1024 * 16: 'f' * 1024 * 1024,
+                                  'g': 'g' * 128})
+        self.assertSerializeDict({})
+
+    def test_dict_serialization(self):
+        serialize, deserialize = self.p.serialize_dict, self.p.deserialize_dict
+
+        data = {'foo': 'baze'}
+        dictstr = serialize(data)
+        self.assertEqual(dictstr, b'\x03\x04foobaze')
+        self.assertEqual(deserialize(dictstr), data)
+
+        dictobj = deserialize(dictstr, decode_values=False)
+        self.assertEqual(dictobj, {'foo': b'baze'})
+
+        # Test edge cases.
+        data = {'': ''}
+        self.assertEqual(serialize(data), b'\x00\x00')
+
+        self.assertEqual(serialize({}), b'')
+        self.assertEqual(deserialize(b''), {})
+
+    def test_list_serialize_deserialize(self):
+        self.assertSerializeList(['foo', 'bar', 'nugget', 'baze'])
+        self.assertSerializeList(['', 'zaizee', ''])
+        self.assertSerializeList(['', '', ''])
+        self.assertSerializeList(['a' * 128, 'b' * 1024 * 16,
+                                  'c' * 1024 * 1024, 'd' * 1024])
+        self.assertSerializeList([])
+
+    def test_list_serialization(self):
+        serialize, deserialize = self.p.serialize_list, self.p.deserialize_list
+        # Simple tests.
+        data = ['foo', 'baze', 'nugget', 'bar']
+        liststr = serialize(data)
+        self.assertEqual(liststr, b'\x03foo\x04baze\x06nugget\x03bar')
+        self.assertEqual(deserialize(liststr), data)
+
+        listobj = deserialize(liststr, decode_values=False)
+        self.assertEqual(listobj, [b'foo', b'baze', b'nugget', b'bar'])
+
+        # Test edge cases.
+        data = ['', 'foo', '']
+        self.assertEqual(serialize(data), b'\x00\x03foo\x00')
+
+        self.assertEqual(serialize([]), b'')
+        self.assertEqual(deserialize(b''), [])
+
+
 class TokyoTyrantTests(object):
     def test_basic_operations(self):
         self.assertEqual(len(self.db), 0)
@@ -834,6 +846,13 @@ class TokyoTyrantTests(object):
         self.assertEqual(self.db['k1'], 'v1x')
         del self.db['k1']
 
+        data = {'x1': 'y1', 'x2': 'y2', 'x3': 'y3'}
+        self.db.setnr_bulk(data)
+        self.assertEqual(sorted(list(self.db.items())), [
+            ('k2', 'v2'), ('key', 'foo'), ('x1', 'y1'), ('x2', 'y2'),
+            ('x3', 'y3')])
+        self.db.remove_bulk(['x1', 'x2', 'x3'])
+
         # Test matching.
         self.assertEqual(sorted(self.db.match_prefix('k')), ['k2', 'key'])
         self.assertEqual(self.db.match_regex('k[0-9]'), {'k2': 'v2'})
@@ -844,6 +863,14 @@ class TokyoTyrantTests(object):
         self.assertEqual(self.db.incr('n', 3), 4)
         self.assertEqual(self.db.incr_double('nd'), 1.)
         self.assertEqual(self.db.incr_double('nd', 2.5), 3.5)
+
+    def test_get_raw(self):
+        self.db['k1'] = b'v1'
+        self.db['k2'] = b'\xff\x00\xff'
+        self.assertEqual(self.db.get_raw('k1'), b'v1')
+        self.assertEqual(self.db.get_raw('k2'), b'\xff\x00\xff')
+        self.assertEqual(self.db.get_bulk_raw(['k1', 'k2']), {
+            'k1': b'v1', 'k2': b'\xff\x00\xff'})
 
     def test_large_read_write(self):
         long_str = 'a' * (1024 * 1024 * 32)  # 32MB string.

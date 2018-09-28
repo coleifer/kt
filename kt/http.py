@@ -489,3 +489,4 @@ class Cursor(object):
         elif not self.step():
             self._valid = False
         return kv
+    next = __next__

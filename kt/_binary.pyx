@@ -327,6 +327,7 @@ cdef class RequestBuffer(object):
 
     cdef send(self):
         self._socket.send(self.buf.getvalue())
+        self.buf = io.BytesIO()
 
 
 cdef class BaseResponseHandler(object):
@@ -378,44 +379,46 @@ cdef class BaseResponseHandler(object):
             accum.append(self.read_key())
         return accum
 
-    cdef tuple read_key_value(self):
+    cdef tuple read_key_value(self, decode_value):
         cdef:
-            bytes bkey
+            bytes bkey, bval
             int klen, vlen
         klen, vlen = s_unpack('>II', self.read(8))
         bkey = self.read(klen)
+        bval = self.read(vlen)
         return ((_decode(bkey) if self._decode_keys else bkey),
-                self.value_decode(self.read(vlen)))
+                self.value_decode(bval) if decode_value else bval)
 
-    cdef dict read_keys_values(self):
+    cdef dict read_keys_values(self, decode_values):
         cdef:
             dict accum = {}
             int i, n_items
 
         n_items = self.read_int()
         for i in range(n_items):
-            key, value = self.read_key_value()
+            key, value = self.read_key_value(decode_values)
             accum[key] = value
         return accum
 
-    cdef tuple read_key_value_with_db_expire(self):
+    cdef tuple read_key_value_with_db_expire(self, decode_value):
         cdef:
-            bytes bkey
+            bytes bkey, bval
             int klen, vlen
 
         _, klen, vlen, _ = s_unpack('>HIIq', self.read(18))
         bkey = self.read(klen)
+        bval = self.read(vlen)
         return ((_decode(bkey) if self._decode_keys else bkey),
-                self.value_decode(self.read(vlen)))
+                self.value_decode(bval) if decode_value else bval)
 
-    cdef dict read_keys_values_with_db_expire(self):
+    cdef dict read_keys_values_with_db_expire(self, decode_values):
         cdef:
             dict accum = {}
             int i, n_items
 
         n_items = self.read_int()
         for i in range(n_items):
-            key, value = self.read_key_value_with_db_expire()
+            key, value = self.read_key_value_with_db_expire(decode_values)
             accum[key] = value
         return accum
 
@@ -508,7 +511,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
             self._decode_keys,
             self.decode_value)
 
-    def get_bulk(self, keys, db):
+    def get_bulk(self, keys, db, decode_value=True):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
@@ -524,11 +527,11 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
         response = self.response()
         response.check_error(KT_GET_BULK)
-        return response.read_keys_values_with_db_expire()
+        return response.read_keys_values_with_db_expire(decode_value)
 
-    def get(self, key, db):
+    def get(self, key, db, decode_value=True):
         cdef bytes bkey = encode(key)
-        result = self.get_bulk((bkey,), db)
+        result = self.get_bulk((bkey,), db, decode_value)
         return result.get(_decode(bkey) if self._decode_keys else bkey)
 
     def set_bulk(self, data, db, expire_time):
@@ -599,13 +602,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         response = self.response()
         response.check_error(KT_PLAY_SCRIPT)
 
-        if encode_values:
-            return response.read_keys_values()
-        else:
-            # Handle reading "raw" with noop-decoder.
-            response = KTResponseHandler(self._socket, self._decode_keys,
-                                         noop_decode)
-            return response.read_keys_values()
+        return response.read_keys_values(encode_values)
 
 
 cdef class TTBinaryProtocol(BinaryProtocol):
@@ -657,6 +654,14 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .write_key_value(key, value)
          .send())
 
+    def mputnr(self, data):
+        cdef RequestBuffer request = self.request()
+        for key, value in data.items():
+            (request
+             .write_magic(b'\xc8\x18')
+             .write_key_value(key, value)
+             .send())
+
     def out(self, key):
         cdef RequestBuffer request = self.request()
 
@@ -677,7 +682,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return (response.read_value()
                     if decode_value else response.read_bytes())
 
-    def mget(self, keys):
+    def mget(self, keys, decode_values=True):
         cdef:
             RequestBuffer request = self.request()
             TTResponseHandler response
@@ -689,7 +694,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         response = self.response()
         if not response.check_error():
-            return response.read_keys_values()
+            return response.read_keys_values(decode_values)
 
     def vsiz(self, key):
         cdef:

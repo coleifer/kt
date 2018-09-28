@@ -146,6 +146,10 @@ class KyotoTycoon(BaseClient):
         db = self._default_db if db is None else db
         return self._protocol.get(key, db)
 
+    def get_raw(self, key, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.get(key, db, False)
+
     def set(self, key, value, db=None, expire_time=None):
         db = self._default_db if db is None else db
         return self._protocol.set(key, value, db, expire_time)
@@ -157,6 +161,10 @@ class KyotoTycoon(BaseClient):
     def get_bulk(self, keys, db=None):
         db = self._default_db if db is None else db
         return self._protocol.get_bulk(keys, db)
+
+    def get_bulk_raw(self, keys, db=None):
+        db = self._default_db if db is None else db
+        return self._protocol.get_bulk(keys, db, False)
 
     def set_bulk(self, __data=None, **kwargs):
         db = kwargs.pop('db', self._default_db)
@@ -341,6 +349,9 @@ class TokyoTyrant(BaseClient):
     def get(self, key):
         return self._protocol.get(key)
 
+    def get_raw(self, key):
+        return self._protocol.get(key, False)
+
     def set(self, key, value):
         return self._protocol.put(key, value)
 
@@ -349,6 +360,9 @@ class TokyoTyrant(BaseClient):
 
     def get_bulk(self, keys):
         return self._protocol.mget(keys)
+
+    def get_bulk_raw(self, keys):
+        return self._protocol.mget(keys, False)
 
     def set_bulk(self, __data=None, **kwargs):
         if __data is not None:
@@ -389,6 +403,11 @@ class TokyoTyrant(BaseClient):
 
     def setnr(self, key, value):
         self._protocol.putnr(key, value)
+
+    def setnr_bulk(self, __data=None, **kwargs):
+        if __data is not None:
+            kwargs.update(__data)
+        self._protocol.mputnr(kwargs)
 
     def setdup(self, key, value):
         return self._protocol.misc_putdup(key, value)
