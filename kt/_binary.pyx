@@ -666,7 +666,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
          .send())
         return 0 if self.response().check_error() else 1
 
-    def get(self, key):
+    def get(self, key, decode_value=True):
         cdef:
             RequestBuffer request = self.request()
             TTResponseHandler response
@@ -674,7 +674,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         request.write_magic(b'\xc8\x30').write_key(key).send()
         response = self.response()
         if not response.check_error():
-            return response.read_value()
+            return (response.read_value()
+                    if decode_value else response.read_bytes())
 
     def mget(self, keys):
         cdef:
