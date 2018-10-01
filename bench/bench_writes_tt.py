@@ -4,6 +4,9 @@
 Benchmark script to measure time taken to set values using a variety of
 different methods (set, set_bulk, setnr, setnr_bulk).
 """
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 import contextlib
 import time
 
