@@ -137,7 +137,7 @@ cdef class _Socket(object):
 
         self.buf.seek(self.bytes_read)
         data = self.buf.read(length)
-        self.bytes_read += len(data)
+        self.bytes_read += length
 
         if self.bytes_read == self.bytes_written:
             self.purge()
