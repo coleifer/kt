@@ -89,6 +89,7 @@ cdef class _Socket(object):
 
     def __del__(self):
         if not self.is_closed:
+            self._socket.shutdown(socket.SHUT_RDWR)
             self._socket.close()
 
     cdef recv(self, int n):
@@ -117,6 +118,7 @@ cdef class _Socket(object):
         if self.is_closed:
             return False
 
+        self._socket.shutdown(socket.SHUT_RDWR)
         self._socket.close()
         self.is_closed = True
         return True
