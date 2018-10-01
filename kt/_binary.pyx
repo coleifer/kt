@@ -99,6 +99,7 @@ cdef class _Socket(object):
 
     def __del__(self):
         if not self.is_closed:
+            self.buf.close()
             self._socket.shutdown(socket.SHUT_RDWR)
             self._socket.close()
 
@@ -238,13 +239,14 @@ cdef class SocketPool(object):
             int n = 0
             _Socket sock
 
-        while self.free:
-            ts, sock = heapq.heappop(self.free)
-            if ts > (now - cutoff):
-                heapq.heappush(self.free, (ts, sock))
-                break
-            else:
-                n += 1
+        with self.mutex:
+            while self.free:
+                ts, sock = heapq.heappop(self.free)
+                if ts > (now - cutoff):
+                    heapq.heappush(self.free, (ts, sock))
+                    break
+                else:
+                    n += 1
 
         return n
 
@@ -253,16 +255,17 @@ cdef class SocketPool(object):
             int n = 0
             _Socket sock
 
-        while self.free:
-            _, sock = self.free.pop()
-            sock.close()
-            n += 1
+        with self.mutex:
+            while self.free:
+                _, sock = self.free.pop()
+                sock.close()
+                n += 1
 
-        tmp = self.in_use
-        self.in_use = {}
-        for sock in tmp.values():
-            sock.close()
-            n += 1
+            tmp = self.in_use
+            self.in_use = {}
+            for sock in tmp.values():
+                sock.close()
+                n += 1
 
         return n
 
@@ -389,9 +392,11 @@ cdef class BaseResponseHandler(object):
         self.value_decode = value_decode
 
     cdef bytes read(self, int n):
-        cdef bytes value = b''
+        cdef bytes value
         if n > 0:
             value = self._socket.recv(n)
+        else:
+            value = b''
         return value
 
     cdef int read_int(self):
