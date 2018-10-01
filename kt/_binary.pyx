@@ -78,34 +78,70 @@ def noop_decode(obj):
     return obj
 
 
+cdef int READSIZE = 64 * 1024
+
+
 cdef class _Socket(object):
     cdef:
+        bytearray recvbuf
+        int bytes_read
+        int bytes_written
         readonly bint is_closed
+        buf
         _socket
 
     def __init__(self, s):
         self._socket = s
         self.is_closed = False
+        self.buf = io.BytesIO()
+        self.bytes_read = self.bytes_written = 0
+        self.recvbuf = bytearray(READSIZE)
 
     def __del__(self):
         if not self.is_closed:
             self._socket.shutdown(socket.SHUT_RDWR)
             self._socket.close()
 
-    cdef recv(self, int n):
+    cdef _read_from_socket(self, int length):
         cdef:
-            bytearray result = bytearray(n)  # Allocate buffer of size n.
             int l = 0
+            int marker = 0
 
-        buf = memoryview(result)  # Obtain "pointer" to head of buffer.
-        while n:
-            l = self._socket.recv_into(buf, n)
-            if not l:
-                self.close()
-                raise ServerConnectionError('server went away')
-            n -= l
-            buf = buf[l:]  # Advance pointer by number of bytes read.
-        return bytes(result)  # Return bytes.
+        recvptr = memoryview(self.recvbuf)
+        self.buf.seek(self.bytes_written)
+
+        try:
+            while True:
+                l = self._socket.recv_into(recvptr, READSIZE)
+                if not l:
+                    self.close()
+                    raise ServerConnectionError('server went away')
+                self.buf.write(recvptr[:l])
+                self.bytes_written += l
+                marker += l
+                if length > 0 and length > marker:
+                    continue
+                break
+        except socket.timeout:
+            raise ServerConnectionError('timed out reading from socket')
+        except socket.error:
+            raise ServerConnectionError('error while reading from socket')
+
+    cdef recv(self, int length):
+        cdef:
+            bytes data
+            int buflen = self.bytes_written - self.bytes_read
+
+        if length > buflen:
+            self._read_from_socket(length - buflen)
+
+        self.buf.seek(self.bytes_read)
+        data = self.buf.read(length)
+        self.bytes_read += len(data)
+
+        if self.bytes_read == self.bytes_written:
+            self.purge()
+        return data
 
     cdef send(self, bytes data):
         try:
@@ -114,9 +150,18 @@ cdef class _Socket(object):
             self.close()
             raise ServerConnectionError('server went away')
 
+    cdef purge(self):
+        self.buf.seek(0)
+        self.buf.truncate()
+        self.bytes_read = self.bytes_written = 0
+
     cdef bint close(self):
         if self.is_closed:
             return False
+
+        self.purge()
+        self.buf.close()
+        self.buf = None
 
         self._socket.shutdown(socket.SHUT_RDWR)
         self._socket.close()
