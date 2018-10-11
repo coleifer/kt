@@ -281,10 +281,11 @@ this document:
 * ``table.tct`` - on-disk table database ("tct").
 * ``table.tcf`` - fixed-length database ("tcf").
 
-The tree database is neat, as it you can store another layer of key/value pairs
-in the value field. These key/value pairs are serialized using ``0x0`` as the
-delimiter, and by default :py:class:`TokyoTyrant` does not do any special
-handling for these values.
+The table database is neat, as it you can store another layer of key/value
+pairs in the value field. These key/value pairs are serialized using ``0x0`` as
+the delimiter. :py:class:`TokyoTyrant` provides a special serializer,
+``TT_TABLE``, which properly handles reading and writing data dictionaries to a
+table database.
 
 For more information about the above database types, their algorithmic
 complexity, and the unit of locking, see `ttserver documentation <http://fallabs.com/tokyotyrant/spex.html#serverprog>`_.
