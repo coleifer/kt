@@ -1,3 +1,4 @@
+cimport cython
 from cpython.bytes cimport PyBytes_AsStringAndSize
 from cpython.bytes cimport PyBytes_Check
 from cpython.unicode cimport PyUnicode_AsUTF8String
@@ -279,6 +280,7 @@ cdef class SocketPool(object):
         return _Socket(sock)
 
 
+@cython.freelist(32)
 cdef class RequestBuffer(object):
     cdef:
         object value_encode
@@ -380,6 +382,7 @@ cdef class RequestBuffer(object):
         self.buf = io.BytesIO()
 
 
+@cython.freelist(32)
 cdef class BaseResponseHandler(object):
     cdef:
         bint _decode_keys
