@@ -90,11 +90,8 @@ class BytesField(Field):
 
 
 class TextField(BytesField):
-    def deserialize(self, raw_value):
-        return decode(raw_value)
-
-    def serialize(self, value):
-        return encode(value)
+    deserialize = decode
+    serialize = encode
 
 
 class DateTimeField(BytesField):
@@ -169,6 +166,19 @@ class TimestampField(IntegerField):
             timestamp = time.mktime(value.timetuple())
         timestamp = (timestamp * 1000000) + value.microsecond
         return encode(str(timestamp))
+
+
+class SearchField(Field):
+    _index_type = C.INDEX_TOKEN
+    __eq__ = _e(C.OP_STR_EQ)
+    __ne__ = _e(C.OP_STR_EQ | C.OP_NEGATE)
+    match = _e(C.OP_FTS_PHRASE)
+    match_all = _me(C.OP_FTS_ALL)
+    match_any = _me(C.OP_FTS_ANY)
+    search = _e(C.OP_FTS_EXPRESSION)
+
+    deserialize = decode
+    serialize = encode
 
 
 class BaseModel(type):
