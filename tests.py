@@ -1300,6 +1300,8 @@ class TestTokyoTyrantModels(BaseModelTestCase):
             dt_field = DateTimeField()
             d_field = DateField()
             ts_field = TimestampField()
+            tk_field = TokenField()
+            fts_field = SearchField()
 
         # All values are stored/retrieved correctly.
         dt = datetime.datetime(2018, 1, 2, 3, 4, 5, 6789)
@@ -1307,7 +1309,7 @@ class TestTokyoTyrantModels(BaseModelTestCase):
 
         T.create(key='t1', bytes_field=b'\xfftest\xff', text_field='test',
                  int_field=7, float_field=3.14, dt_field=dt, d_field=d,
-                 ts_field=dt)
+                 ts_field=dt, tk_field='foo bar baz', fts_field='huey zaizee')
         t1 = T['t1']
         self.assertEqual(t1.key, 't1')
         self.assertEqual(t1.bytes_field, b'\xfftest\xff')
@@ -1317,6 +1319,8 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         self.assertEqual(t1.dt_field, dt)
         self.assertEqual(t1.d_field, d)
         self.assertEqual(t1.ts_field, dt)
+        self.assertEqual(t1.tk_field, 'foo bar baz')
+        self.assertEqual(t1.fts_field, 'huey zaizee')
 
         # All blank fields works correctly.
         T.create(key='t2')
@@ -1329,6 +1333,8 @@ class TestTokyoTyrantModels(BaseModelTestCase):
         self.assertTrue(t2.dt_field is None)
         self.assertTrue(t2.d_field is None)
         self.assertTrue(t2.ts_field is None)
+        self.assertTrue(t2.tk_field is None)
+        self.assertTrue(t2.fts_field is None)
 
 
 class TestTokyoTyrantQuery(BaseModelTestCase):
