@@ -181,6 +181,10 @@ class SearchField(Field):
     serialize = encode
 
 
+class TokenField(TextField):
+    _index_type = C.INDEX_TOKEN
+
+
 class BaseModel(type):
     def __new__(cls, name, bases, attrs):
         if not bases:
