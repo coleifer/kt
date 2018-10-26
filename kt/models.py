@@ -169,7 +169,7 @@ class TimestampField(IntegerField):
 
 
 class SearchField(Field):
-    _index_type = C.INDEX_TOKEN
+    _index_type = C.INDEX_QGRAM
     __eq__ = _e(C.OP_STR_EQ)
     __ne__ = _e(C.OP_STR_EQ | C.OP_NEGATE)
     match = _e(C.OP_FTS_PHRASE)
