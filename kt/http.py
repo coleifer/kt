@@ -98,7 +98,7 @@ class HttpProtocol(object):
     def _post(self, path, body, db):
         return self._session.post(self.path(path), data=body)
 
-    def request(self, path, data, db=None, allowed_status=None):
+    def request(self, path, data, db=None, allowed_status=None, atomic=False):
         if isinstance(data, dict):
             body = self._encode_keys_values(data)
         elif isinstance(data, list):
@@ -106,10 +106,16 @@ class HttpProtocol(object):
         else:
             body = data
 
+        prefix = {}
         if db is not False:
-            db_data = self._encode_keys_values({'DB': db or 0})
+            prefix['DB'] = db or 0
+        if atomic:
+            prefix['atomic'] = ''
+
+        if prefix:
+            db_data = self._encode_keys_values(prefix)
             if body:
-                body = b'\n'.join((body, db_data))
+                body = b'\n'.join((db_data, body))
             else:
                 body = db_data
 
@@ -247,7 +253,7 @@ class HttpProtocol(object):
         value = resp[self.decode_key(b'value')]
         return self.decode_value(value)
 
-    def set_bulk(self, data, db=0, expire_time=None):
+    def set_bulk(self, data, db=0, expire_time=None, atomic=True):
         accum = {}
         if expire_time is not None:
             accum['xt'] = str(expire_time)
@@ -256,15 +262,15 @@ class HttpProtocol(object):
         for key, value in data.items():
             accum['_%s' % key] = self.encode_value(value)
 
-        resp, status = self.request('/set_bulk', accum, db)
-        return resp
-
-    def remove_bulk(self, keys, db=None):
-        resp, status = self.request('/remove_bulk', keys, db)
+        resp, status = self.request('/set_bulk', accum, db, atomic=atomic)
         return int(resp.pop(self.decode_key(b'num')))
 
-    def _do_bulk_command(self, cmd, params, db=None):
-        resp, status = self.request(cmd, params, db)
+    def remove_bulk(self, keys, db=None, atomic=True):
+        resp, status = self.request('/remove_bulk', keys, db, atomic=atomic)
+        return int(resp.pop(self.decode_key(b'num')))
+
+    def _do_bulk_command(self, cmd, params, db=None, **kwargs):
+        resp, status = self.request(cmd, params, db, **kwargs)
 
         n = resp.pop(self.decode_key(b'num'))
         if n == b'0':
@@ -275,8 +281,8 @@ class HttpProtocol(object):
             accum[key[1:]] = self.decode_value(value)
         return accum
 
-    def get_bulk(self, keys, db=None):
-        return self._do_bulk_command('/get_bulk', keys, db)
+    def get_bulk(self, keys, db=None, atomic=True):
+        return self._do_bulk_command('/get_bulk', keys, db, atomic=atomic)
 
     def vacuum(self, step=0, db=None):
         # If step > 0, the whole region is scanned.

@@ -65,6 +65,15 @@ class BaseTestCase(unittest.TestCase):
 
 class KyotoTycoonTests(object):
     def test_basic_operations(self):
+        """
+        Test operations of the KyotoTycoon client.
+
+        This class wraps two protocol handlers - binary and HTTP protocols. The
+        interface exposes a super-set of the methods available, preferring the
+        bulk/binary APIs where possible.
+
+        Note: protocols are also tested individually.
+        """
         self.assertEqual(len(self.db), 0)
 
         # Test basic set and get.
@@ -150,6 +159,100 @@ class KyotoTycoonTests(object):
         self.assertEqual(self.db['key'], long_str)
         del self.db['key']
         self.assertEqual(len(self.db), 0)
+
+    def test_protocol_binary(self):
+        self._test_protocol(self.db._protocol)
+
+    def test_protocol_http(self):
+        self._test_protocol(self.db._protocol_http)
+
+    def _test_protocol(self, p):
+        # Both protocols support some basic methods, which we will test (namely
+        # get/set/remove and their bulk equivalents).
+        self.assertEqual(self.db.count(), 0)
+
+        # Test basic set and get.
+        p.set('k1', 'v1', 0, None)
+        self.assertEqual(p.get('k1', 0), 'v1')
+        self.assertTrue(p.get('kx', 0) is None)
+
+        # Test setting bulk data returns records set.
+        nkeys = p.set_bulk({'k1': 'v1-x', 'k2': 'v2', 'k3': 'v3'}, 0, None)
+        self.assertEqual(nkeys, 3)
+
+        # Test getting bulk data returns dict of just existing keys.
+        self.assertEqual(p.get_bulk(['k1', 'k2', 'k3', 'kx'], 0),
+                         {'k1': 'v1-x', 'k2': 'v2', 'k3': 'v3'})
+
+        # Test removing a record returns number of rows removed.
+        self.assertEqual(p.remove('k1', 0), 1)
+        self.assertEqual(p.remove('k1', 0), 0)
+
+        p.set('k1', 'v1', 0, None)
+        self.assertEqual(p.remove_bulk(['k1', 'k3', 'kx'], 0), 2)
+        self.assertEqual(p.remove_bulk([], 0), 0)
+        self.assertEqual(p.remove_bulk(['k2'], 0), 1)
+
+    def test_http_protocol_special(self):
+        p = self.db._protocol_http
+        p.append('key', 'abc', 0, None)
+        p.append('key', 'def', 0, None)
+        self.assertEqual(p.get('key', 0), 'abcdef')
+
+        # Test atomic replace and pop.
+        self.assertTrue(p.replace('key', 'xyz', 0, None))
+        self.assertEqual(p.seize('key', 0), 'xyz')
+        self.assertFalse(p.seize('key', 0))
+        self.assertFalse(p.replace('key', 'abc', 0, None))
+        self.assertTrue(p.add('key', 'foo', 0, None))
+        self.assertFalse(p.add('key', 'bar', 0, None))
+        self.assertEqual(p.get('key', 0), 'foo')
+
+        # Test compare-and-swap.
+        self.assertTrue(p.cas('key', 'foo', 'baz', 0, None))
+        self.assertFalse(p.cas('key', 'foo', 'bar', 0, None))
+        self.assertEqual(p.get('key', 0), 'baz')
+
+        self.assertTrue(p.check('key', 0))
+        self.assertFalse(p.check('other', 0))
+        self.assertEqual(p.count(), 1)
+
+        # Test numeric operations.
+        self.assertEqual(p.increment('n'), 1)
+        self.assertEqual(p.increment('n', 3, 0, None), 4)
+        self.assertEqual(p.increment_double('nd'), 1.)
+        self.assertEqual(p.increment_double('nd', 2.5, 0, None), 3.5)
+
+        # Flush db.
+        p.clear()
+
+        # Test bulk operations with and without atomic.
+        for atomic in (False, True):
+            accum = {}
+            keys = []
+            for i in range(100):
+                accum['k%064d' % i] = '%01024d' % i
+                keys.append('k%064d' % i)
+
+            self.assertEqual(p.set_bulk(accum, 0, None, atomic=atomic), 100)
+            resp = p.get_bulk(keys, 0, atomic=atomic)
+            self.assertEqual(resp, accum)
+            self.assertEqual(p.remove_bulk(keys, 0, atomic=atomic), 100)
+
+        # Set some data for matching tests.
+        p.set_bulk(dict(('k%04d' % i, 'v%01024d' % i) for i in range(100)), 0)
+        keys = ['k%04d' % i for i in range(100)]
+
+        # Test matching.
+        self.assertEqual(sorted(p.match_prefix('k')), keys)
+        self.assertEqual(sorted(p.match_regex('k00[25]3')), ['k0023', 'k0053'])
+        self.assertEqual(p.match_regex('x\d'), [])
+        self.assertEqual(p.match_similar('k0022'), [
+            'k0022',  # Exact match is always first, regardless of storage.
+            'k0002', 'k0012',
+            'k0020', 'k0021', 'k0023', 'k0024', 'k0025', 'k0026', 'k0027',
+            'k0028', 'k0029', 'k0032', 'k0042', 'k0052', 'k0062', 'k0072',
+            'k0082', 'k0092'])
 
 
 class TestKyotoTycoonHash(KyotoTycoonTests, BaseTestCase):
