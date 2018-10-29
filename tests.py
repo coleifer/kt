@@ -254,6 +254,18 @@ class TestKyotoTycoonCursor(BaseTestCase):
         self.assertTrue(cursor.remove())
         self.assertEqual(list(cursor), [])
 
+    def test_implicit_cursor_operations(self):
+        self.assertEqual(list(self.db.keys()), ['k1', 'k2', 'k3', 'k4'])
+        self.assertEqual(list(self.db.values()), ['v1', 'v2', 'v3', 'v4'])
+        self.assertEqual(list(self.db.items()), [
+            ('k1', 'v1'),
+            ('k2', 'v2'),
+            ('k3', 'v3'),
+            ('k4', 'v4')])
+
+        # Nonlazy.
+        self.assertEqual(self.db.keys_nonlazy(), ['k1', 'k2', 'k3', 'k4'])
+
 
 class TestKyotoTycoonSerializers(BaseTestCase):
     server = EmbeddedServer
