@@ -10,7 +10,7 @@ addons:
       - kyototycoon
       - libkyototycoon-dev
 install:
-  - pip install cython
+  - pip install cython requests
   - python setup.py build_ext -i
 script:
   - python tests.py
