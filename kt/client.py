@@ -303,6 +303,9 @@ class KyotoTycoon(BaseClient):
             yield key
             if not cursor.step(): return
 
+    def keys_nonlazy(self, db=None):
+        return self.match_prefix('', db=db)
+
     def values(self, db=None):
         cursor = self.cursor(db=db)
         cursor.jump()
