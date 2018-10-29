@@ -9,8 +9,10 @@ addons:
     packages:
       - kyototycoon
       - libkyototycoon-dev
+      - tokyotyrant
+      - libtokyotyrant-dev
 install:
-  - pip install cython requests
+  - pip install cython msgpack-python requests
   - python setup.py build_ext -i
 script:
   - python tests.py
