@@ -28,7 +28,7 @@ if not IS_PY2:
 
 
 quote_b = partial(quote_from_bytes, safe='')
-unquote_b = partial(unquote_to_bytes, safe='')
+unquote_b = partial(unquote_to_bytes)
 
 
 def decode_from_content_type(content_type):
