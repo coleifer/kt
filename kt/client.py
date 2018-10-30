@@ -170,7 +170,10 @@ class KyotoTycoon(BaseClient):
         db = kwargs.pop('db', self._default_db)
         expire_time = kwargs.pop('expire_time', None)
         if __data is not None:
-            kwargs.update(__data)
+            if kwargs:
+                raise ValueError('unexpected arguments for set_bulk(): %s'
+                                 % ', '.join(sorted(kwargs)))
+            kwargs = __data
         return self._protocol.set_bulk(kwargs, db, expire_time)
 
     def remove_bulk(self, keys, db=None):
