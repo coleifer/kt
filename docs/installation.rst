@@ -12,7 +12,6 @@ Installation
 Dependencies
 ------------
 
-* *requests* - for the HTTP rpc interface.
 * *cython* - for building the binary protocol C extension.
 
 These libraries are installed automatically if you install *kt* with pip. To
@@ -20,7 +19,7 @@ install these dependencies manually, run:
 
 .. code-block:: bash
 
-    $ pip install cython requests
+    $ pip install cython
 
 Installing with git
 -------------------

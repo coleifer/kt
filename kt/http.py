@@ -4,15 +4,15 @@ from functools import partial
 import datetime
 import sys
 try:
+    from http.client import HTTPConnection
     from urllib.parse import quote_from_bytes
     from urllib.parse import unquote_to_bytes
     from urllib.parse import urlencode
 except ImportError:
+    from httplib import HTTPConnection
     from urllib import quote as quote_from_bytes
     from urllib import unquote as unquote_to_bytes
     from urllib import urlencode
-
-import requests
 
 from ._binary import decode
 from ._binary import encode
@@ -52,15 +52,24 @@ class HttpProtocol(object):
             self.decode_key = noop_decode
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
-        self._prefix = 'http://%s:%s/rpc' % (self._host, self._port)
-        self._session = requests.Session()
-        self._session.headers['Content-Type'] = self._content_type
+        self._prefix = '/rpc'
+        self._conn = self._get_conn()
+        self._headers = {'Content-Type': self._content_type}
+
+    def _get_conn(self):
+        return HTTPConnection(self._host, self._port)
+
+    def reconnect(self):
+        self.close()
+        self._conn = self._get_conn()
+        self._conn.connect()
+        return True
 
     def close(self):
-        self._session.close()
+        self._conn.close()
 
     def __del__(self):
-        self._session.close()
+        self._conn.close()
 
     def _encode_keys_values(self, data):
         accum = []
@@ -92,11 +101,9 @@ class HttpProtocol(object):
 
         return accum
 
-    def path(self, url):
-        return ''.join((self._prefix, url))
-
     def _post(self, path, body, db):
-        return self._session.post(self.path(path), data=body)
+        self._conn.request('POST', '/rpc' + path, body, self._headers)
+        return self._conn.getresponse()
 
     def request(self, path, data, db=None, allowed_status=None, atomic=False):
         if isinstance(data, dict):
@@ -120,12 +127,15 @@ class HttpProtocol(object):
                 body = db_data
 
         r = self._post(path, body, db)
-        if r.status_code != 200:
-            if allowed_status is None or r.status_code not in allowed_status:
-                raise ProtocolError('protocol error [%s]' % r.status_code)
+        content = r.read()
+        content_type = r.getheader('content-type')
+        status = r.status
 
-        return (self._decode_response(r.content, r.headers['content-type']),
-                r.status_code)
+        if status != 200:
+            if allowed_status is None or status not in allowed_status:
+                raise ProtocolError('protocol error [%s]' % status)
+
+        return (self._decode_response(content, content_type), status)
 
     def report(self):
         resp, status = self.request('/report', {}, None)

@@ -11,7 +11,7 @@ addons:
       - tokyotyrant
       - libtokyotyrant-dev
 install:
-  - pip install cython msgpack-python requests
+  - pip install cython msgpack-python
   - python setup.py build_ext -i
 script:
   - python tests.py
