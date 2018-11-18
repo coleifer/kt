@@ -194,7 +194,7 @@ cdef class SocketPool(object):
         cdef:
             float now = time.time()
             float ts
-            long tid = get_ident()
+            tid = get_ident()
             _Socket s
 
         with self.mutex:
@@ -216,7 +216,7 @@ cdef class SocketPool(object):
 
     cdef checkin(self):
         cdef:
-            long tid = get_ident()
+            tid = get_ident()
             _Socket s
 
         if tid in self.in_use:
@@ -226,7 +226,7 @@ cdef class SocketPool(object):
 
     cdef close(self):
         cdef:
-            long tid = get_ident()
+            tid = get_ident()
             _Socket s
 
         s = self.in_use.pop(tid, None)
