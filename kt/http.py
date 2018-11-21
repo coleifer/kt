@@ -46,6 +46,7 @@ class HttpProtocol(object):
                  encode_value=None, decode_value=None, timeout=None):
         self._host = host
         self._port = port
+        self._timeout = timeout
         if decode_keys:
             self.decode_key = decode
         else:
@@ -57,7 +58,7 @@ class HttpProtocol(object):
         self._headers = {'Content-Type': self._content_type}
 
     def _get_conn(self):
-        return HTTPConnection(self._host, self._port)
+        return HTTPConnection(self._host, self._port, timeout=self._timeout)
 
     def reconnect(self):
         self.close()

@@ -49,11 +49,12 @@ KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE,
 
 class BaseClient(object):
     def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
-                 decode_keys=True):
+                 decode_keys=True, timeout=None):
         self._host = host
         self._port = port
         self._serializer = serializer
         self._decode_keys = decode_keys
+        self._timeout = timeout
 
         if self._serializer == KT_MSGPACK and msgpack is None:
             raise ImproperlyConfigured('msgpack library not found')
@@ -130,7 +131,8 @@ class KyotoTycoon(BaseClient):
             port=self._port,
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
-            decode_value=self._decode_value)
+            decode_value=self._decode_value,
+            timeout=self._timeout)
         self._protocol_http = HttpProtocol(
             host=self._host,
             port=self._port,
@@ -350,7 +352,8 @@ class TokyoTyrant(BaseClient):
             port=self._port,
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
-            decode_value=self._decode_value)
+            decode_value=self._decode_value,
+            timeout=self._timeout)
 
     def get(self, key):
         return self._protocol.get(key)
