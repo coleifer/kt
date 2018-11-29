@@ -1199,6 +1199,19 @@ class TestTokyoTyrantBTreeOnDisk(BaseTestCase):
         self.db.set('k2', 'v2-d')  # This overwrites the duplicate (???).
         assertItems(['v1-a', 'v2-d', 'v2-b'])
 
+        # Multiple set_bulk calls will store additional vals.
+        self.assertTrue(self.db.clear())
+        self.db.set_bulk({'k3': 'v3-b'})
+        self.db.set_bulk({'k3': 'v3-c'})
+        self.db.set_bulk({'k3': 'v3-a'})
+        assertItems(['v3-b', 'v3-c', 'v3-a'])
+
+        self.db.set('k3', 'v3-d')  # Overwrites as expected.
+        assertItems(['v3-d', 'v3-c', 'v3-a'])
+
+        self.db.set_bulk({'k3': 'v3-e'})  # Adds dup.
+        assertItems(['v3-d', 'v3-c', 'v3-a', 'v3-e'])
+
         # Wtf, who knows?
         self.assertTrue(self.db.clear())
 
