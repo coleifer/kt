@@ -1212,6 +1212,15 @@ class TestTokyoTyrantBTreeOnDisk(BaseTestCase):
         self.db.set_bulk({'k3': 'v3-e'})  # Adds dup.
         assertItems(['v3-d', 'v3-c', 'v3-a', 'v3-e'])
 
+        self.db.remove_bulk(['k3'])  # And this removes everything?! WTF.
+        assertItems([])
+
+        self.db.setdup('k4', 'v4a')
+        self.db.setdup('k4', 'v4b')
+        assertItems(['v4a', 'v4b'])
+        self.db.remove_bulk(['k4'])
+        assertItems([])
+
         # Wtf, who knows?
         self.assertTrue(self.db.clear())
 
