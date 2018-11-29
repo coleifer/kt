@@ -1221,6 +1221,12 @@ class TestTokyoTyrantBTreeOnDisk(BaseTestCase):
         self.db.remove_bulk(['k4'])
         assertItems([])
 
+        # The misc put method, unlike putlist, doesn't add dupes. Again, WTF.
+        p = self.db._protocol
+        p.misc_put('k5', 'v5a')
+        p.misc_put('k5', 'v5b')
+        assertItems(['v5b'])
+
         # Wtf, who knows?
         self.assertTrue(self.db.clear())
 
