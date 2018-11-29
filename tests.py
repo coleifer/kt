@@ -1088,6 +1088,120 @@ class TestTokyoTyrantBTree(TokyoTyrantTests, BaseTestCase):
             'k16': 'v16', 'k17': 'v17', 'k18': 'v18', 'k19': 'v19'})
         self.assertEqual(self.db.iter_from('kx'), {})
 
+    def test_duplicates(self):
+        # When using an in-memory B-Tree duplicates are not stored.
+        self.db.set('k1', 'v1')
+        self.db.set('k1', 'v2')
+        self.assertEqual(list(self.db.items()), [('k1', 'v2')])
+
+        # To trigger the storage of duplicates with an on-disk B-Tree, we first
+        # use the set_bulk API. See the following test-case (BTreeOnDisk) for
+        # an example of how this behavior differs.
+        self.db.set_bulk({'k1': 'vx'})
+        self.db.set('k1', 'vy')
+        self.assertEqual(list(self.db.items()), [('k1', 'vy')])
+
+        # What about using the setdup and setdupback APIs? Apparently they have
+        # no effect and return failure.
+        self.assertFalse(self.db.setdup('k1', 'vz0'))
+        self.assertFalse(self.db.setdupback('k1', 'vz1'))
+        self.assertEqual(list(self.db.items()), [('k1', 'vy')])
+
+
+class TestTokyoTyrantBTreeOnDisk(BaseTestCase):
+    server = EmbeddedTokyoTyrantServer
+    server_kwargs = {'database': '/tmp/tt-btree.tcb'}
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestTokyoTyrantBTreeOnDisk, cls).tearDownClass()
+        if os.path.exists('/tmp/tt-btree.tcb'):
+            os.unlink('/tmp/tt-btree.tcb')
+
+    def test_duplicates(self):
+        def assertItems(expected):
+            self.assertEqual([v for _, v in self.db.items()], expected)
+
+        # When using the ordinary "set" API, we will not store duplicates.
+        self.db.set('k1', 'v1')
+        self.db.set('k1', 'v2')
+        assertItems(['v2'])
+
+        # When we use "set_bulk()" it will result in the storage of duplicates.
+        self.db.set_bulk({'k1': 'vx'})
+        self.db.set('k1', 'vy')  # Dup goes to the front.
+        assertItems(['vy', 'vx'])
+
+        # Subsequent set_bulk will store dupes.
+        self.db.set_bulk({'k1': 'vz', 'k2': 'v2'})  # Dupe goes to the back?
+        assertItems(['vy', 'vx', 'vz', 'v2'])
+
+        # WTF, the dupes now replace just the first item?
+        self.db.set('k1', 'v0')
+        self.db.set('k1', 'vw')
+        assertItems(['vw', 'vx', 'vz', 'v2'])
+
+        # Just documenting behavior... the "back" ones are put at the front,
+        # while the "setdup" calls go to the back.
+        self.assertTrue(self.db.setdup('k1', 'vy-1'))
+        self.assertTrue(self.db.setdupback('k1', 'vy-2'))
+        self.assertTrue(self.db.setdup('k1', 'v0-1'))
+        self.assertTrue(self.db.setdupback('k1', 'v0-2'))
+        assertItems(['v0-2', 'vy-2', 'vw', 'vx', 'vz', 'vy-1', 'v0-1', 'v2'])
+
+        # Again, replaces just the first.
+        self.db.set('k1', 'zz')
+        assertItems(['zz', 'vy-2', 'vw', 'vx', 'vz', 'vy-1', 'v0-1', 'v2'])
+
+        # What happens when doing append?
+        self.db.append('k1', 'foo')
+        assertItems(['zzfoo', 'vy-2', 'vw', 'vx', 'vz', 'vy-1', 'v0-1', 'v2'])
+
+        # Add calls will not succeed.
+        self.assertFalse(self.db.add('k1', 'yy'))
+
+        # Remove calls just remove the first.
+        self.assertTrue(self.db.remove('k1'))
+        self.assertTrue(self.db.remove('k1'))
+        self.assertTrue(self.db.set('k1', 'vwx'))
+        self.assertTrue(self.db.setdup('k1', 'v3'))
+        assertItems(['vwx', 'vx', 'vz', 'vy-1', 'v0-1', 'v3', 'v2'])
+
+        # We remove the first item, vwx, add v2-z which replaces v2, and
+        # replace v2-z with v2-y.
+        self.assertTrue(self.db.remove('k1'))
+        self.assertTrue(self.db.set('k2', 'v2-z'))
+        self.assertTrue(self.db.set('k2', 'v2-y'))
+        assertItems(['vx', 'vz', 'vy-1', 'v0-1', 'v3', 'v2-y'])
+
+        self.assertTrue(self.db.setdup('k2', 'v2-z'))
+        assertItems(['vx', 'vz', 'vy-1', 'v0-1', 'v3', 'v2-y', 'v2-z'])
+
+        self.db.remove_bulk(['k1'])
+        self.db.set('k1', 'v1-1')
+        self.db.set('k1', 'v1-0')
+        self.db.set('k1', 'v1-2')
+        assertItems(['v1-2', 'v2-y', 'v2-z'])
+        self.db.clear()
+
+        # If we first set_bulk, then subsequently call set multiple times, no
+        # duplicates are stored.
+        self.db.set_bulk({'k1': 'v1-b'})
+        self.db.set('k1', 'v1-c')
+        self.db.set('k1', 'v1-a')
+        assertItems(['v1-a'])
+
+        # If we first set, then call set_bulk, then call set again, duplicates
+        # will be stored, as if triggered by the set_bulk() call.
+        self.db.set('k2', 'v2-a')
+        self.db.set_bulk({'k2': 'v2-b'})
+        self.db.set('k2', 'v2-c')  # This stores a duplicate.
+        self.db.set('k2', 'v2-d')  # This overwrites the duplicate (???).
+        assertItems(['v1-a', 'v2-d', 'v2-b'])
+
+        # Wtf, who knows?
+        self.assertTrue(self.db.clear())
+
 
 class TestTokyoTyrantScripting(BaseTestCase):
     lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/tt.lua')
