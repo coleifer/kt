@@ -1062,6 +1062,18 @@ class TestTokyoTyrantBTree(TokyoTyrantTests, BaseTestCase):
     server = EmbeddedTokyoTyrantServer
     server_kwargs = {'database': '+'}
 
+    def test_keys_items_fast(self):
+        self.db.update(k1='v1', k2='v2', k3='v3')
+        self.assertEqual(self.db.keys_fast(), ['k1', 'k2', 'k3'])
+        self.assertEqual(self.db.items_fast(), [
+            ('k1', 'v1'), ('k2', 'v2'), ('k3', 'v3')])
+
+        p = self.db._protocol
+        self.assertEqual(p.misc_range(''),
+                         {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+        self.assertEqual(p.misc_rangelist(''),
+                         [('k1', 'v1'), ('k2', 'v2'), ('k3', 'v3')])
+
     def test_ranges(self):
         data = dict(('k%02d' % i, 'v%s' % i) for i in range(20))
         self.db.update(data)
@@ -1244,59 +1256,97 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(self.db.script('seize', 'k2'), b'v2')
         self.assertFalse('k2' in self.db)
         self.assertEqual(self.db.script('seize', 'k2'), b'')
+        self.assertEqual(self.db.lua.seize('k3', decode_result=True), 'v3')
 
     def test_script_match(self):
-        def decode_match(r):
-            accum = {}
-            for line in r.decode('utf-8').strip().splitlines():
-                key, value = line.split('\t')
-                accum[key] = value
-            return accum
-
         self.db.update(key='value', key_a='a', key_b='bbb', ky_a='aa')
-        results = self.db.script('match_pattern', 'key*')
-        self.assertEqual(decode_match(results), {'key': 'value', 'key_a': 'a',
-                                                 'key_b': 'bbb'})
 
-        results = self.db.script('match_pattern', 'key_%a')
-        self.assertEqual(decode_match(results), {'key_a': 'a', 'key_b': 'bbb'})
+        def assertDict(key, expected, max_result=None, script='match_pattern'):
+            result = self.db.script(script, key, max_result,
+                                    decode_result=True, as_dict=True)
+            self.assertEqual(result, expected)
 
-        # No matches returns empty result.
-        results = self.db.script('match_pattern', '%d+')
-        self.assertEqual(decode_match(results), {})
+        assertDict('key*', {'key': 'value', 'key_a': 'a', 'key_b': 'bbb'})
+        assertDict('key_%a', {'key_a': 'a', 'key_b': 'bbb'})
+        assertDict('%d+', {})
+        assertDict('key_%a', {'key_a': 'a'}, 1)
+        assertDict('key*', {'key': 'value', 'key_a': 'a'}, 2)
 
-        results = self.db.script('match_similar', 'key', 1)
-        self.assertEqual(decode_match(results), {'key': 'value'})
+        def assertSimilar(key, expected, max_result=None):
+            assertDict(key, expected, max_result, 'match_similar')
 
-        results = self.db.script('match_similar', 'key', 2)
-        self.assertEqual(decode_match(results), {'key': 'value', 'key_a': 'a',
-                                                 'key_b': 'bbb'})
+        # If we do not specify a max similarity, then we only match exact.
+        assertSimilar('ky_a', {'ky_a': 'aa'})
+        assertSimilar('key_a', {'key_a': 'a'})
 
-        results = self.db.script('match_similar_value', 'a', 1)
-        self.assertEqual(decode_match(results), {'key_a': 'a', 'ky_a': 'aa'})
+        # We can specify an edit-distance using the value, e.g. 1 or 2.
+        assertSimilar('ky_a', {'key_a': 'a', 'ky_a': 'aa'}, 1)
+        assertSimilar('key', {'key': 'value'}, 1)
+        assertSimilar('key', {'key': 'value', 'key_a': 'a', 'key_b': 'bbb'}, 2)
+
+        def assertSimilarValue(key, expected, max_result=None):
+            assertDict(key, expected, max_result, 'match_similar_value')
+
+        # Test the match_similar_value function.
+        assertSimilarValue('a', {'key_a': 'a'})
+        assertSimilarValue('a', {'key_a': 'a', 'ky_a': 'aa'}, 1)
+
+    def test_as_list(self):
+        def assertSplit(s, delim, expected):
+            result = self.db.script('split', s, delim, decode_result=True,
+                                    as_list=True)
+            self.assertEqual(result, expected)
+
+        # It's not very smart, as it will include empty strings.
+        assertSplit('aa bbb  ccc dd', ' ', ['aa', 'bbb', '', 'ccc', 'dd'])
+
+        # Delimiter cannot be multiple characters.
+        assertSplit('fooXXbarXXbaz', 'XX', ['foo', '', 'bar', '', 'baz'])
+
+        # What happens with empty results?
+        assertSplit('', '', [])
+        assertSplit('', ' ', [])
+        assertSplit(' ', ' ', [''])  # Correct!
+
+    def test_hash_helpers(self):
+        self.db.update(k1='v1', k2='v2')
+        L = self.db.lua
+        self.assertEqual(L.hash('foo'), b'acbd18db4cc2f85cedef654fccc4a4d8')
+        self.assertEqual(L.hash('foo', 'md5')[:4], b'acbd')
+        self.assertEqual(L.hash('v1')[:4], b'6654')
+        self.assertEqual(L.hash('foo', 'crc32', as_int=True), 2356372769)
+        self.assertEqual(L.hash('v1', 'crc32', as_int=True), 1768082613)
+        self.assertEqual(L.hash('')[:4], b'd41d')
+
+        self.assertEqual(L.hash_key('k1')[:4], b'6654')
+        self.assertEqual(L.hash_key('k1', 'crc32', as_int=True), 1768082613)
+        self.assertEqual(L.hash_key('k2')[:4], b'1b26')
+        self.assertEqual(L.hash_key('kx'), b'')
 
     def test_script_queue(self):
+        L = self.db.lua
         for i in range(5):
-            self.db.script('enqueue', 'testqueue', 'item-%s' % i)
+            L.enqueue('tq', 'item-%s' % i)
 
-        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'5')
+        self.assertEqual(L.queuesize('tq', as_int=True), 5)
 
         # By default one item is dequeued.
-        item = self.db.script('dequeue', 'testqueue')
-        self.assertEqual(item, b'item-0\n')
-        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'4')
+        item = L.dequeue('tq', decode_result=True, as_list=True)
+        self.assertEqual(item, ['item-0'])
+        self.assertEqual(L.queuesize('tq', as_int=True), 4)
 
         # We can dequeue multiple items, which are newline-separated.
-        items = self.db.script('dequeue', 'testqueue', 3)
-        self.assertEqual(items, b'item-1\nitem-2\nitem-3\n')
+        items = L.dequeue('tq', 3, decode_result=True, as_list=True)
+        self.assertEqual(items, ['item-1', 'item-2', 'item-3'])
 
         # It's OK if fewer items exist.
-        items = self.db.script('dequeue', 'testqueue', 3)
-        self.assertEqual(items, b'item-4\n')
+        items = L.dequeue('tq', 3, decode_result=True, as_list=True)
+        self.assertEqual(items, ['item-4'])
 
         # No items -> empty string and zero count.
-        self.assertEqual(self.db.script('dequeue', 'testqueue'), b'')
-        self.assertEqual(self.db.script('queuesize', 'testqueue'), b'0')
+        self.assertEqual(L.dequeue('tq', as_list=True), [])
+        self.assertEqual(L.dequeue('tq'), b'')  # Empty string.
+        self.assertEqual(L.queuesize('tq', as_int=True), 0)
 
 
 class TestTokyoTyrantScriptingTable(BaseTestCase):

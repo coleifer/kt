@@ -1,9 +1,14 @@
--- Find records whose key matches a pattern.
+-- Find records whose key matches a pattern. Accepts pattern and optional
+-- maximum number of results.
 function match_pattern(key, value)
+  value = tonumber(value)
+  if not value then value = 0 end
   local res = ""
   function proc(tkey, tvalue)
     if string.match(tkey, key) then
       res = res .. tkey .. "\t" .. tvalue .. "\n"
+      value = value - 1
+      if value == 0 then return false end
     end
     return true
   end
@@ -12,7 +17,8 @@ function match_pattern(key, value)
 end
 
 
--- Find records whose key is within a certain edit distance.
+-- Find records whose key is within a certain edit distance. Accepts pattern
+-- key and edit distance, which defaults to 0 (exact match) if not provided.
 function match_similar(key, value)
   value = tonumber(value)
   if not value then
@@ -30,7 +36,8 @@ function match_similar(key, value)
 end
 
 
--- Find records whose value is within a certain edit distance.
+-- Find records whose value is within a certain edit distance. Accepts value
+-- pattern and edit distance.
 function match_similar_value(key, value)
   value = tonumber(value)
   if not value then
@@ -139,6 +146,8 @@ end
 
 -- Split a string.
 function split(key, value)
+  if key == "" then return "" end
+
   if #value < 1 then
     value = nil
   end
@@ -151,9 +160,18 @@ function split(key, value)
 end
 
 
--- e.g. hash('md5', 'foo bar'), hash('crc32', 'checksum me')
+-- e.g. hash('foo bar', 'md5'), hash('checksum me', 'crc32')
 function hash(key, value)
-  return _hash(key, value)
+  if #value < 1 then value = "md5" end
+  return _hash(value, key)
+end
+
+-- hash the value stored in a key, if it exists.
+function hash_key(key, value)
+  local tval = _get(key)
+  if tval == nil then return '' end
+  if #value < 1 then value = "md5" end
+  return _hash(value, tval)
 end
 
 

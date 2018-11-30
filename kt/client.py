@@ -382,9 +382,25 @@ class TokyoTyrant(BaseClient):
         return self._protocol.misc_outlist(keys)
 
     def script(self, name, key=None, value=None, lock_records=False,
-               lock_all=False, encode_value=True, decode_result=False):
-        return self._protocol.ext(name, key, value, lock_records, lock_all,
-                                  encode_value, decode_result)
+               lock_all=False, encode_value=True, decode_result=False,
+               as_list=False, as_dict=False, as_int=False):
+        res = self._protocol.ext(name, key, value, lock_records, lock_all,
+                                 encode_value, decode_result)
+        if as_list or as_dict:
+            # In the event the return value is an empty string, then we just
+            # return the empty container type.
+            if not res:
+                return {} if as_dict else []
+
+            # Split on newlines -- dicts are additionally split on tabs.
+            delim = '\n' if decode_result else b'\n'
+            res = res.rstrip(delim).split(delim)
+            if as_dict:
+                delim = '\t' if decode_result else b'\t'
+                res = dict([r.split(delim) for r in res])
+        elif as_int:
+            res = int(res) if res else None
+        return res
 
     def clear(self):
         return self._protocol.vanish()
@@ -521,8 +537,14 @@ class TokyoTyrant(BaseClient):
     def keys(self):
         return self._protocol.keys()
 
+    def keys_fast(self):
+        return self._protocol.fwmkeys('')
+
     def items(self, start_key=None):
         return self._protocol.items(start_key)
+
+    def items_fast(self):
+        return self._protocol.misc_rangelist('')
 
     def set_index(self, name, index_type, check_exists=False):
         if check_exists:

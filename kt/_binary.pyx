@@ -1056,6 +1056,18 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             i += 2
         return result
 
+    def _misc_list_of_lists(self, list items):
+        if items is None: return []
+
+        cdef:
+            list result = []
+            int i = 0, l = len(items)
+
+        while i < l:
+            result.append((_decode(items[i]), self.decode_value(items[i + 1])))
+            i += 2
+        return result
+
     def misc_getlist(self, keys, update_log=True):
         cdef list items = self._misc_key_list('getlist', keys, update_log)
         return self._misc_list_to_dict(items)
@@ -1106,6 +1118,14 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         items = self._misc('regex', args, False)
         return self._misc_list_to_dict(items)
 
+    def misc_regexlist(self, regex, max_records=None):
+        cdef list items
+        args = [_encode(regex)]
+        if max_records is not None:
+            args.append(_encode(str(max_records)))
+        items = self._misc('regex', args, False)
+        return self._misc_list_of_lists(items)
+
     def misc_range(self, start, stop=None, max_records=0):
         cdef list items
         args = [_encode(start), _encode(str(max_records))]
@@ -1113,6 +1133,14 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             args.append(_encode(stop))
         items = self._misc('range', args, False)
         return self._misc_list_to_dict(items)
+
+    def misc_rangelist(self, start, stop=None, max_records=0):
+        cdef list items
+        args = [_encode(start), _encode(str(max_records))]
+        if stop is not None:
+            args.append(_encode(stop))
+        items = self._misc('range', args, False)
+        return self._misc_list_of_lists(items)
 
     def misc_setindex(self, column, index_type, update_log=True):
         args = [_encode(column), _encode(str(index_type))]
