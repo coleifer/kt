@@ -454,7 +454,7 @@ Tokyo Tyrant client
         :param list keys: list of keys to remove
         :return: boolean indicating success
 
-    .. py:method:: script(name, key=None, value=None, lock_records=False, lock_all=False, encode_value=True, decode_result=False)
+    .. py:method:: script(name, key=None, value=None, lock_records=False, lock_all=False, encode_value=True, decode_result=False, as_list=False, as_dict=False, as_int=False)
 
         :param str name: name of lua function to call
         :param str key: key to pass to lua function (optional)
@@ -463,6 +463,9 @@ Tokyo Tyrant client
         :param bool lock_all: lock all records during script execution
         :param bool encode_value: serialize the value before sending to the script
         :param bool decode_result: deserialize the script return value
+        :param bool as_list: deserialize newline-separated value into a list
+        :param bool as_dict: deserialize list of tab-separated key/value pairs into dict
+        :param bool as_int: return value as integer
         :return: byte-string or obj returned by function (depending on decode_result)
 
         Execute a lua function. Tokyo Tyrant lua extensions accept two
