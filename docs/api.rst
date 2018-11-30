@@ -690,6 +690,17 @@ Tokyo Tyrant client
         :return: list of all key/value tuples in database
         :rtype: list
 
+    .. py:method:: keys_fast()
+
+        :return: list of all keys in database loaded in a single operation.
+        :rtype: list
+
+    .. py:method:: items_fast()
+
+        :return: list of all key/value tuples in database loaded in a single
+            operation.
+        :rtype: list
+
     .. py:method:: set_index(name, index_type, check_exists=False)
 
         :param str name: column name to index
