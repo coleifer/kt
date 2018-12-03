@@ -679,6 +679,17 @@ class TestKyotoTycoonScriptingMultiDB(BaseTestCase):
     server_kwargs = {'database': '%', 'server_args': ['-scr', lua_script, '%']}
 
     def test_script_multi_db(self):
+        self.db.clear(db=0)
+        self.db.clear(db=1)
+
+        for i in range(3):
+            self.db.set('k%s' % i, 'v%s' % i, db=(i % 2))
+
+        self.assertEqual(self.db.lua.list(), {'k0': 'v0', 'k2': 'v2'})
+        self.assertEqual(self.db.lua.list(db=0), {'k0': 'v0', 'k2': 'v2'})
+        self.assertEqual(self.db.lua.list(db=1), {'k1': 'v1'})
+
+    def test_script_datatypes_multi_db(self):
         L = self.db.lua
 
         # Test sets with multiple dbs.
