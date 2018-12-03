@@ -455,11 +455,22 @@ class TestKyotoTycoonScripting(BaseTestCase):
 
         # Test get members.
         self.assertEqual(L.smembers(key='s1'), dict((k, '1') for k in keys))
+        self.assertEqual(L.scard(key='s1'), {'num': '4'})
 
         # Test pop.
         res = L.spop(key='s1')
         self.assertEqual(res['num'], '1')
         self.assertTrue(res['value'] in keys)
+        self.assertEqual(L.scard(key='s1'), {'num': '3'})
+
+        # Pop remaining 3 items.
+        for _ in range(3):
+            res = L.spop(key='s1')
+            self.assertTrue(res['value'] in keys)
+
+        self.assertEqual(L.scard(key='s1'), {'num': '0'})
+        res = L.spop(key='s1')
+        self.assertEqual(res, {'num': '0'})
 
         # Restore all keys.
         L.sadd(key='s1', value=b'\x01'.join(k.encode() for k in keys))
