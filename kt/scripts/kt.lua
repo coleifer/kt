@@ -2,6 +2,16 @@ kt = __kyototycoon__
 db = kt.db
 
 
+function _select_db(inmap)
+  if inmap.db then
+    db_idx = tonumber(inmap.db) + 1
+    inmap.db = nil
+    db = kt.dbs[db_idx]
+  else
+    db = kt.db
+  end
+end
+
 -- helper function for hash functions.
 function hkv(inmap, outmap, fn)
   local key = inmap.table_key
@@ -9,6 +19,7 @@ function hkv(inmap, outmap, fn)
     kt.log("system", "hash function missing required: 'table_key'")
     return kt.RVEINVALID
   end
+  _select_db(inmap) -- Allow db to be specified as argument.
   inmap.table_key = nil
   local value, xt = db:get(key)
   local value_tbl = {}
@@ -214,6 +225,7 @@ function skv(inmap, outmap, fn)
     kt.log("system", "set function missing required: 'key'")
     return kt.RVEINVALID
   end
+  _select_db(inmap) -- Allow db to be specified as argument.
   inmap.key = nil
   local value, xt = db:get(key)
   local value_tbl = {}
@@ -367,6 +379,7 @@ function svv(inmap, outmap, fn)
     kt.log("system", "set function missing required: 'key1' or 'key2'")
     return kt.RVEINVALID
   end
+  _select_db(inmap) -- Allow db to be specified as argument.
   local value1, xt = db:get(key1)
   local value2, xt = db:get(key2)
 
@@ -444,6 +457,7 @@ function lkv(inmap, outmap, fn)
     kt.log("system", "list function missing required: 'key'")
     return kt.RVEINVALID
   end
+  _select_db(inmap) -- Allow db to be specified as argument.
   inmap.key = nil
   local value, xt = db:get(key)
   local value_array = {}
@@ -648,6 +662,7 @@ function move(inmap, outmap)
     kt.log("info", "missing src and/or dest key in move() call")
     return kt.RVEINVALID
   end
+  _select_db(inmap) -- Allow db to be specified as argument.
   local keys = { src, dest }
   local first = true
   local src_val = nil
@@ -683,6 +698,7 @@ end
 -- accepts: {}
 -- returns: { k=v ... }
 function list(inmap, outmap)
+  _select_db(inmap) -- Allow db to be specified as argument.
   local cur = db:cursor()
   cur:jump()
   while true do

@@ -673,6 +673,62 @@ class TestKyotoTycoonScripting(BaseTestCase):
                          {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
 
 
+class TestKyotoTycoonScriptingMultiDB(BaseTestCase):
+    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/kt.lua')
+    server = EmbeddedServer
+    server_kwargs = {'database': '%', 'server_args': ['-scr', lua_script, '%']}
+
+    def test_script_multi_db(self):
+        L = self.db.lua
+
+        # Test sets with multiple dbs.
+        for i in range(5):
+            L.sadd(key='s1', value='v%s' % i, db=(i % 2))
+
+        self.assertEqual(L.scard(key='s1', db=0), {'num': '3'})
+        self.assertEqual(L.scard(key='s1', db=1), {'num': '2'})
+
+        # By default the database is 0.
+        self.assertEqual(sorted(L.smembers(key='s1')), ['v0', 'v2', 'v4'])
+        self.assertEqual(sorted(L.smembers(key='s1', db=0)),
+                         ['v0', 'v2', 'v4'])
+        self.assertEqual(sorted(L.smembers(key='s1', db=1)), ['v1', 'v3'])
+
+        self.assertEqual(L.sismember(key='s1', value='v2', db=0), {'num': '1'})
+        self.assertEqual(L.sismember(key='s1', value='v2', db=1), {'num': '0'})
+        self.assertEqual(L.sismember(key='s1', value='v1', db=0), {'num': '0'})
+        self.assertEqual(L.sismember(key='s1', value='v1', db=1), {'num': '1'})
+
+        self.assertTrue(L.spop(key='s1')['value'] in ['v0', 'v2', 'v4'])
+        self.assertTrue(L.spop(key='s1', db=1)['value'] in ['v1', 'v3'])
+
+        # Test hashes with multiple dbs.
+        L.hmset(table_key='h1', k1='v1', k2='v2', db=0)
+        L.hmset(table_key='h1', k1='v1x', k2='v2x', db=1)
+
+        L.hset(table_key='h1', key='k1', value='v1z', db=0)
+        L.hset(table_key='h1', key='k1', value='v1y', db=1)
+
+        self.assertEqual(L.hgetall(table_key='h1'), {'k1': 'v1z', 'k2': 'v2'})
+        self.assertEqual(L.hgetall(table_key='h1', db=0),
+                         {'k1': 'v1z', 'k2': 'v2'})
+        self.assertEqual(L.hgetall(table_key='h1', db=1),
+                         {'k1': 'v1y', 'k2': 'v2x'})
+
+        # Test lists with multiple dbs.
+        for i in range(5):
+            L.llpush(key='l1', value='i%s' % i, db=(i % 2))
+
+        self.assertEqual(L.llen(key='l1')['num'], '3')
+        self.assertEqual(L.llen(key='l1', db=0)['num'], '3')
+        self.assertEqual(L.llen(key='l1', db=1)['num'], '2')
+
+        self.assertEqual(L.llpop(key='l1')['value'], 'i4')
+        self.assertEqual(L.lrpop(key='l1', db=0)['value'], 'i0')
+        self.assertEqual(L.llpop(key='l1', db=1)['value'], 'i3')
+        self.assertEqual(L.lrpop(key='l1', db=1)['value'], 'i1')
+
+
 class TestKyotoTycoonMultiDatabase(BaseTestCase):
     server = EmbeddedServer
     server_kwargs = {'database': '%', 'server_args': ['*']}
