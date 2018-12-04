@@ -576,43 +576,6 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(R(start=3, stop=2), {})
         self.assertEqual(R(start=1, stop=1), {})
 
-    def test_python_list_integration(self):
-        L = self.db.lua
-        data = ['foo', 'a' * 1024, '', 'b' * 1024 * 32, 'c']
-
-        self.db['l1'] = self.db._protocol.serialize_list(data)
-        self.assertEqual(L.llen(key='l1'), {'num': '5'})
-        self.assertEqual(L.lrpop(key='l1'), {'value': 'c'})
-        self.assertEqual(L.lrpop(key='l1'), {'value': 'b' * 1024 * 32})
-        self.assertEqual(L.lrpop(key='l1'), {'value': ''})
-        self.assertEqual(L.lrpop(key='l1'), {'value': 'a' * 1024})
-        self.assertEqual(L.lrpop(key='l1'), {'value': 'foo'})
-
-        for item in data:
-            L.lrpush(key='l1', value=item)
-
-        raw_data = self.db.get_raw('l1')
-        self.assertEqual(self.db._protocol.deserialize_list(raw_data), data)
-        self.assertEqual(L.lrange(key='l1'), dict((str(i), data[i])
-                                                  for i in range(len(data))))
-
-    def test_python_dict_integration(self):
-        L = self.db.lua
-        data = {'a' * 64: 'b' * 128, 'c' * 1024: 'd' * 1024 * 32,
-                'e' * 256: 'f' * 1024 * 1024, 'g': ''}
-
-        self.db['h1'] = self.db._protocol.serialize_dict(data)
-        self.assertEqual(L.hgetall(table_key='h1'), data)
-        self.assertEqual(L.hget(table_key='h1', key='e' * 256),
-                         {'value': 'f' * 1024 * 1024})
-        self.assertTrue(L.hcontains(table_key='h1', key='a' * 64))
-        del self.db['h1']
-
-        L.hmset(table_key='h1', **data)
-        raw_data = self.db.get_raw('h1')
-        self.assertEqual(self.db._protocol.deserialize_dict(raw_data), data)
-        self.assertEqual(L.hgetall(table_key='h1'), data)
-
     def test_script_hash(self):
         L = self.db.lua
 
@@ -671,6 +634,60 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.db.update(k1='v1', k2='v2', k3='v3')
         self.assertEqual(self.db.script('list'),
                          {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
+
+    def test_python_list_integration(self):
+        L = self.db.lua
+        P = self.db._protocol
+        data = ['foo', 'a' * 1024, '', 'b' * 1024 * 32, 'c']
+
+        self.db['l1'] = P.serialize_list(data)
+        self.assertEqual(L.llen(key='l1'), {'num': '5'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'c'})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'b' * 1024 * 32})
+        self.assertEqual(L.lrpop(key='l1'), {'value': ''})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'a' * 1024})
+        self.assertEqual(L.lrpop(key='l1'), {'value': 'foo'})
+
+        for item in data:
+            L.lrpush(key='l1', value=item)
+
+        raw_data = self.db.get_raw('l1')
+        self.assertEqual(P.deserialize_list(raw_data), data)
+        self.assertEqual(L.lrange(key='l1'), dict((str(i), data[i])
+                                                  for i in range(len(data))))
+
+        db2 = KyotoTycoon(port=self.db._port, serializer=KT_NONE)
+        db2.set('l2', P.serialize_list(['i0', 'i1', 'i2', 'i3']))
+        self.assertEqual(L.llen(key='l2'), {'num': '4'})
+        self.assertEqual(L.lrpop(key='l2'), {'value': 'i3'})
+        self.assertEqual(P.deserialize_list(db2.get('l2')), ['i0', 'i1', 'i2'])
+        db2.close()
+
+    def test_python_dict_integration(self):
+        L = self.db.lua
+        P = self.db._protocol
+        data = {'a' * 64: 'b' * 128, 'c' * 1024: 'd' * 1024 * 32,
+                'e' * 256: 'f' * 1024 * 1024, 'g': ''}
+
+        self.db['h1'] = self.db._protocol.serialize_dict(data)
+        self.assertEqual(L.hgetall(table_key='h1'), data)
+        self.assertEqual(L.hget(table_key='h1', key='e' * 256),
+                         {'value': 'f' * 1024 * 1024})
+        self.assertTrue(L.hcontains(table_key='h1', key='a' * 64))
+        del self.db['h1']
+
+        L.hmset(table_key='h1', **data)
+        raw_data = self.db.get_raw('h1')
+        self.assertEqual(self.db._protocol.deserialize_dict(raw_data), data)
+        self.assertEqual(L.hgetall(table_key='h1'), data)
+
+        db2 = KyotoTycoon(port=self.db._port, serializer=KT_NONE)
+        db2.set('h2', P.serialize_dict({'k1': 'v1', 'k2': 'v2', 'k3': 'v3'}))
+        self.assertEqual(L.hdel(table_key='h2', key='k2'), {'num': '1'})
+        self.assertEqual(L.hgetall(table_key='h2'), {'k1': 'v1', 'k3': 'v3'})
+        self.assertEqual(P.deserialize_dict(db2.get('h2')),
+                         {'k1': 'v1', 'k3': 'v3'})
+        db2.close()
 
 
 class TestKyotoTycoonScriptingMultiDB(BaseTestCase):
