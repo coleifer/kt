@@ -171,115 +171,6 @@ cdef class _Socket(object):
         return True
 
 
-cdef class SocketPool(object):
-    cdef:
-        dict in_use
-        list free
-        readonly bint nodelay
-        readonly int port
-        readonly str host
-        readonly timeout
-        mutex
-
-    def __init__(self, host, port, timeout=None, nodelay=False):
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.nodelay = nodelay
-        self.in_use = {}
-        self.free = []
-        self.mutex = threading.Lock()
-
-    cdef _Socket checkout(self):
-        cdef:
-            float now = time.time()
-            float ts
-            tid = get_ident()
-            _Socket s
-
-        with self.mutex:
-            if tid in self.in_use:
-                s = self.in_use[tid]
-                if s.is_closed:
-                    del self.in_use[tid]
-                else:
-                    return s
-
-            while self.free:
-                ts, s = heapq.heappop(self.free)
-                self.in_use[tid] = s
-                return s
-
-            s = self.create_socket()
-            self.in_use[tid] = s
-            return s
-
-    cdef checkin(self):
-        cdef:
-            tid = get_ident()
-            _Socket s
-
-        if tid in self.in_use:
-            s = self.in_use.pop(tid)
-            if not s.is_closed:
-                heapq.heappush(self.free, (time.time(), s))
-
-    cdef close(self):
-        cdef:
-            tid = get_ident()
-            _Socket s
-
-        s = self.in_use.pop(tid, None)
-        if s and not s.is_closed:
-            s.close()
-
-    cdef int close_idle(self, cutoff=60):
-        cdef:
-            float now = time.time()
-            float ts
-            int n = 0
-            _Socket sock
-
-        with self.mutex:
-            while self.free:
-                ts, sock = heapq.heappop(self.free)
-                if ts > (now - cutoff):
-                    heapq.heappush(self.free, (ts, sock))
-                    break
-                else:
-                    n += 1
-
-        return n
-
-    cdef close_all(self):
-        cdef:
-            int n = 0
-            _Socket sock
-
-        with self.mutex:
-            while self.free:
-                _, sock = self.free.pop()
-                sock.close()
-                n += 1
-
-            tmp = self.in_use
-            self.in_use = {}
-            for sock in tmp.values():
-                sock.close()
-                n += 1
-
-        return n
-
-    cdef _Socket create_socket(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if self.nodelay:
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.connect((self.host, self.port))
-        if self.timeout:
-            sock.settimeout(self.timeout)
-        return _Socket(sock)
-
-
 @cython.freelist(32)
 cdef class RequestBuffer(object):
     cdef:
@@ -507,6 +398,16 @@ cdef class TTResponseHandler(BaseResponseHandler):
             raise ServerError('Unexpected server response: %x' % imagic)
 
 
+class _ConnectionState(object):
+    def __init__(self, **kwargs):
+        super(_ConnectionState, self).__init__(**kwargs)
+        self.reset()
+    def reset(self): self.conn = None
+    def set_connection(self, conn): self.conn = conn
+
+class _ConnectionLocal(_ConnectionState, threading.local): pass
+
+
 cdef class BinaryProtocol(object):
     cdef:
         readonly bint _decode_keys
@@ -514,32 +415,41 @@ cdef class BinaryProtocol(object):
         readonly int _port
         readonly encode_value
         readonly decode_value
-        readonly SocketPool _socket_pool
+        readonly object _timeout
+        public object _state
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
                  encode_value=None, decode_value=None, timeout=None):
         self._host = host
         self._port = port
+        self._timeout = timeout
         self._decode_keys = decode_keys
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
-        self._socket_pool = SocketPool(self._host, self._port, timeout,
-                                       nodelay=True)
+        self._state = _ConnectionLocal()
 
-    def __del__(self):
-        self._socket_pool.close()
-
-    def checkin(self):
-        self._socket_pool.checkin()
+    def is_closed(self):
+        return self._state.conn is None
 
     def close(self):
-        return self._socket_pool.close()
+        if self._state.conn is None: return False
+        cdef _Socket conn = self._state.conn
+        conn.close()
+        self._state.reset()
+        return True
 
-    def close_all(self):
-        return self._socket_pool.close_all()
+    cpdef connect(self):
+        if self._state.conn is not None: return False
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.settimeout(self._timeout)
+        sock.connect((self._host, self._port))
+        self._state.conn = _Socket(sock)
+        return True
 
-    def close_idle(self, n=60):
-        return self._socket_pool.close_idle(n)
+    cdef _Socket _connection(self):
+        self.connect()
+        return <_Socket>(self._state.conn)
 
     def serialize_list(self, data):
         return _serialize_list(data)
@@ -555,14 +465,14 @@ cdef class BinaryProtocol(object):
 
     cdef RequestBuffer request(self):
         return RequestBuffer(
-            self._socket_pool.checkout(),
+            self._connection(),
             self.encode_value)
 
 
 cdef class KTBinaryProtocol(BinaryProtocol):
     cdef KTResponseHandler response(self):
         return KTResponseHandler(
-            self._socket_pool.checkout(),
+            self._connection(),
             self._decode_keys,
             self.decode_value)
 
@@ -663,7 +573,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 cdef class TTBinaryProtocol(BinaryProtocol):
     cdef TTResponseHandler response(self):
         return TTResponseHandler(
-            self._socket_pool.checkout(),
+            self._connection(),
             self._decode_keys,
             self.decode_value)
 

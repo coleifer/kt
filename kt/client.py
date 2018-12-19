@@ -97,16 +97,10 @@ class BaseClient(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._protocol.checkin()
-
-    def checkin(self):
-        self._protocol.checkin()
+        self._protocol.close()
 
     def close(self):
         self._protocol.close()
-
-    def close_idle(self, n=60):
-        self._protocol.close_idle(n)
 
 
 class ScriptRunner(object):
