@@ -49,12 +49,13 @@ KT_SERIALIZERS = set((KT_BINARY, KT_JSON, KT_MSGPACK, KT_NONE, KT_PICKLE,
 
 class BaseClient(object):
     def __init__(self, host='127.0.0.1', port=1978, serializer=KT_BINARY,
-                 decode_keys=True, timeout=None):
+                 decode_keys=True, timeout=None, connection_pool=False):
         self._host = host
         self._port = port
         self._serializer = serializer
         self._decode_keys = decode_keys
         self._timeout = timeout
+        self._connection_pool = connection_pool
 
         if self._serializer == KT_MSGPACK and msgpack is None:
             raise ImproperlyConfigured('msgpack library not found')
@@ -99,8 +100,14 @@ class BaseClient(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._protocol.close()
 
-    def close(self):
-        self._protocol.close()
+    def close(self, allow_reuse=True):
+        self._protocol.close(allow_reuse)
+
+    def close_all(self):
+        return self._protocol.close_all()
+
+    def close_idle(self, cutoff=60):
+        return self._protocol.close_idle(cutoff)
 
 
 class ScriptRunner(object):
@@ -126,7 +133,8 @@ class KyotoTycoon(BaseClient):
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
             decode_value=self._decode_value,
-            timeout=self._timeout)
+            timeout=self._timeout,
+            connection_pool=self._connection_pool)
         self._protocol_http = HttpProtocol(
             host=self._host,
             port=self._port,
@@ -134,8 +142,8 @@ class KyotoTycoon(BaseClient):
             encode_value=self._encode_value,
             decode_value=self._decode_value)
 
-    def close(self):
-        self._protocol.close()
+    def close(self, allow_reuse=True):
+        self._protocol.close(allow_reuse)
         self._protocol_http.close()
 
     def get(self, key, db=None):
@@ -347,7 +355,8 @@ class TokyoTyrant(BaseClient):
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
             decode_value=self._decode_value,
-            timeout=self._timeout)
+            timeout=self._timeout,
+            connection_pool=self._connection_pool)
 
     def get(self, key):
         return self._protocol.get(key)

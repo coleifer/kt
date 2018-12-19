@@ -398,6 +398,112 @@ cdef class TTResponseHandler(BaseResponseHandler):
             raise ServerError('Unexpected server response: %x' % imagic)
 
 
+cdef class SocketPool(object):
+    cdef:
+        dict in_use
+        list free
+        readonly int port
+        readonly str host
+        readonly timeout
+        mutex
+
+    def __init__(self, host, port, timeout=None):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.in_use = {}
+        self.free = []
+        self.mutex = threading.Lock()
+
+    cdef _Socket create_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if self.timeout:
+            sock.settimeout(self.timeout)
+        sock.connect((self.host, self.port))
+        return _Socket(sock)
+
+    cdef _Socket checkout(self):
+        cdef:
+            float now = time.time()
+            float ts
+            tid = get_ident()
+            _Socket sock
+
+        with self.mutex:
+            if tid in self.in_use:
+                sock = self.in_use[tid]
+                if sock.is_closed:
+                    del self.in_use[tid]
+                else:
+                    return sock
+
+            while self.free:
+                ts, sock = heapq.heappop(self.free)
+                self.in_use[tid] = sock
+                return sock
+
+            sock = self.create_socket()
+            self.in_use[tid] = sock
+            return sock
+
+    cdef checkin(self):
+        cdef:
+            tid = get_ident()
+            _Socket sock
+
+        if tid in self.in_use:
+            sock = self.in_use.pop(tid)
+            if not sock.is_closed:
+                heapq.heappush(self.free, (time.time(), sock))
+
+    cdef close(self):
+        cdef:
+            tid = get_ident()
+            _Socket sock
+
+        sock = self.in_use.pop(tid, None)
+        if sock and not sock.is_closed:
+            sock.close()
+
+    cdef int close_idle(self, cutoff=60):
+        cdef:
+            float now = time.time()
+            float ts
+            int n = 0
+            _Socket sock
+
+        with self.mutex:
+            while self.free:
+                ts, sock = heapq.heappop(self.free)
+                if ts > (now - cutoff):
+                    heapq.heappush(self.free, (ts, sock))
+                    break
+                else:
+                    n += 1
+
+        return n
+
+    cdef close_all(self):
+        cdef:
+            int n = 0
+            _Socket sock
+
+        with self.mutex:
+            while self.free:
+                _, sock = self.free.pop()
+                sock.close()
+                n += 1
+
+            tmp = self.in_use
+            self.in_use = {}
+            for sock in tmp.values():
+                sock.close()
+                n += 1
+
+        return n
+
+
 class _ConnectionState(object):
     def __init__(self, **kwargs):
         super(_ConnectionState, self).__init__(**kwargs)
@@ -416,10 +522,12 @@ cdef class BinaryProtocol(object):
         readonly encode_value
         readonly decode_value
         readonly object _timeout
+        readonly SocketPool _pool
         public object _state
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
-                 encode_value=None, decode_value=None, timeout=None):
+                 encode_value=None, decode_value=None, timeout=None,
+                 connection_pool=False):
         self._host = host
         self._port = port
         self._timeout = timeout
@@ -427,24 +535,66 @@ cdef class BinaryProtocol(object):
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
         self._state = _ConnectionLocal()
+        if connection_pool:
+            self._pool = SocketPool(host, port, timeout)
+        else:
+            self._pool = None
+
+    def __del__(self):
+        if self._pool is not None:
+            self._pool.close_all()
 
     def is_closed(self):
         return self._state.conn is None
 
-    def close(self):
+    def close(self, allow_reuse=True):
         if self._state.conn is None: return False
-        cdef _Socket conn = self._state.conn
-        conn.close()
+
+        cdef _Socket conn
+        if self._pool is not None:
+            if allow_reuse:
+                self._pool.checkin()
+            else:
+                self._pool.close()
+        else:
+            conn = self._state.conn
+            conn.close()
+
         self._state.reset()
         return True
 
+    def close_all(self):
+        if self._pool is None:
+            raise ValueError('connection pool is not enabled')
+
+        self.close()
+        return self._pool.close_all()
+
+    def close_idle(self, cutoff=60):
+        if self._pool is None:
+            raise ValueError('connection pool is not enabled')
+
+        n = self._pool.close_idle(cutoff)
+        if self._state.conn is None:
+            return n
+
+        cdef _Socket conn = self._state.conn
+        if conn.is_closed:
+            self._state.reset()
+        return n
+
     cpdef connect(self):
         if self._state.conn is not None: return False
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.settimeout(self._timeout)
-        sock.connect((self._host, self._port))
-        self._state.conn = _Socket(sock)
+
+        if self._pool is not None:
+            self._state.conn = self._pool.checkout()
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if self._timeout:
+                sock.settimeout(self._timeout)
+            sock.connect((self._host, self._port))
+            self._state.conn = _Socket(sock)
         return True
 
     cdef _Socket _connection(self):
