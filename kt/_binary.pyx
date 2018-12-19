@@ -415,6 +415,9 @@ cdef class SocketPool(object):
         self.free = []
         self.mutex = threading.Lock()
 
+    def stats(self):
+        return len(self.in_use), len(self.free)
+
     cdef _Socket create_socket(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)

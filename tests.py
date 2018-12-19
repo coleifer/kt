@@ -932,6 +932,67 @@ class TestMultipleThreads(BaseTestCase):
         [t.join() for t in threads]
 
 
+class TestConnectionPool(BaseTestCase):
+    server = EmbeddedServer
+    server_kwargs = {'database': '*', 'connection_pool': True}
+
+    def test_connection_pool(self):
+        p = self.db._protocol
+        stats = p._pool.stats
+        self.assertEqual(stats(), (0, 0))  # 0 in-use, 0 free.
+
+        # Performing a DB operation will open a connection.
+        self.assertTrue(self.db.get('k1') is None)
+        self.assertEqual(stats(), (1, 0))  # 1 in-use, 0 free.
+
+        # The close() method will recycle the connection by default when using
+        # a connection pool.
+        self.db.close()
+        self.assertEqual(stats(), (0, 1))  # 0 in-use, 1 free.
+
+        # Re-connecting will use the available connection.
+        self.assertTrue(p.connect())
+        self.assertEqual(stats(), (1, 0))  # 1 in-use, 0 free.
+
+        # Specifying allow_reuse=False will close the socket and it will not be
+        # recycled.
+        self.db.close(allow_reuse=False)
+        self.assertEqual(stats(), (0, 0))
+
+        # Verify that the client's internal connection state is correct.
+        self.assertFalse(p.close())
+        self.assertTrue(p.connect())
+        self.assertFalse(p.connect())
+        self.assertEqual(stats(), (1, 0))
+        self.assertTrue(p.close())
+        self.assertEqual(stats(), (0, 1))
+
+        def in_thread():
+            self.assertTrue(p.connect())
+            self.assertEqual(stats(), (1, 0))  # Reuses previous conn.
+            self.assertTrue(p.close())
+            self.assertEqual(stats(), (0, 1))
+        t = threading.Thread(target=in_thread)
+        t.start() ; t.join()
+
+        self.assertTrue(p.connect())
+        self.assertEqual(stats(), (1, 0))
+
+        def in_another_thread():
+            self.assertTrue(p.connect())
+            self.assertEqual(stats(), (2, 0))  # Reuses previous conn.
+            self.assertTrue(p.close())
+            self.assertEqual(stats(), (1, 1))
+        t = threading.Thread(target=in_another_thread)
+        t.start() ; t.join()
+
+        self.assertTrue(p.close())
+        self.assertEqual(stats(), (0, 2))
+
+        p.close_all()
+        self.assertEqual(stats(), (0, 0))
+
+
 class TestArrayMapSerialization(unittest.TestCase):
     def setUp(self):
         db = KyotoTycoon()
