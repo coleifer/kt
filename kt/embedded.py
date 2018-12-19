@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 class EmbeddedServer(object):
     def __init__(self, server='ktserver', host='127.0.0.1', port=None,
-                 database='*', serializer=None, server_args=None, quiet=False):
+                 database='*', serializer=None, server_args=None, quiet=False,
+                 connection_pool=False):
         self._server = server
         self._host = host
         self._port = port
@@ -26,6 +27,7 @@ class EmbeddedServer(object):
         self._database = database
         self._server_args = server_args or []
         self._quiet = quiet
+        self._connection_pool = connection_pool
 
         # Signals for server startup and shutdown.
         self._server_started = threading.Event()
@@ -37,7 +39,8 @@ class EmbeddedServer(object):
         self._client = None
 
     def _create_client(self):
-        return KyotoTycoon(self._host, self._port, self._serializer)
+        return KyotoTycoon(self._host, self._port, self._serializer,
+                           connection_pool=self._connection_pool)
 
     @property
     def client(self):
@@ -157,9 +160,12 @@ class EmbeddedServer(object):
 
 class EmbeddedTokyoTyrantServer(EmbeddedServer):
     def __init__(self, server='ttserver', host='127.0.0.1', port=None,
-                 database='*', serializer=None, server_args=None, quiet=False):
+                 database='*', serializer=None, server_args=None, quiet=False,
+                 connection_pool=False):
         super(EmbeddedTokyoTyrantServer, self).__init__(
-            server, host, port, database, serializer, server_args, quiet)
+            server, host, port, database, serializer, server_args, quiet,
+            connection_pool)
 
     def _create_client(self):
-        return TokyoTyrant(self._host, self._port, self._serializer)
+        return TokyoTyrant(self._host, self._port, self._serializer,
+                           connection_pool=self._connection_pool)

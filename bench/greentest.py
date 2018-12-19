@@ -31,11 +31,11 @@ server = EmbeddedTokyoTyrantServer(server_args=['-ext', script,
                                                 '-thnum', str(nthreads)])
 server.run()
 
+tt = server._create_client()
 
 def call_slow_script(nsec):
-    tt = server._create_client()
-    s = time.time()
     tt.script('sleep', key=str(nsec))
+    tt.status()
 
 threads = []
 start = time.time()
@@ -50,5 +50,33 @@ if total >= (nsec * nthreads):
     sys.stdout.write(b'\x1b[1;31mFAIL! ')
 else:
     sys.stdout.write(b'\x1b[1;32mOK! ')
+print('TOTAL TIME: %0.3fs\x1b[0m\n' % total)
+
+# Now run a whole shitload of connections.
+nconns = nthreads * 16
+
+def check_status_sleep(nsec):
+    tt.status()
+    time.sleep(nsec)
+    tt.status()
+    tt.close()
+
+print('\x1b[1;33m%s green threads checking status' % (nconns))
+print('\x1b[0m')
+
+threads = []
+start = time.time()
+for i in range(nconns):
+    threads.append(gevent.spawn(check_status_sleep, nsec))
+
+for t in threads:
+    t.join()
+
+total = time.time() - start
+if total >= (nsec * nthreads):
+    sys.stdout.write(b'\x1b[1;31mFAIL! ')
+else:
+    sys.stdout.write(b'\x1b[1;32mOK! ')
 print('TOTAL TIME: %0.3fs\x1b[0m' % total)
+
 server.stop()
