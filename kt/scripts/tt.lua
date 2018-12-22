@@ -202,6 +202,15 @@ function glob(key, value)
 end
 
 
+-- Evaluate arbitrary user script.
+function script(key, value)
+  if not _eval(key) then
+    return nil
+  end
+  return "ok"
+end
+
+
 -- Queue
 -- enqueue a record
 function enqueue(key, value)
@@ -234,6 +243,17 @@ function dequeue(key, max)
     if _out(key) and value then
       res = res .. value .. "\n"
     end
+  end
+  return res
+end
+
+
+-- blocking dequeue.
+function bdequeue(key, max)
+  res = dequeue(key, max)
+  while res == "" do
+    sleep(0.1)
+    res = dequeue(key, max)
   end
   return res
 end

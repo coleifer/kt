@@ -1490,6 +1490,11 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(L.hash_key('k2')[:4], b'1b26')
         self.assertEqual(L.hash_key('kx'), b'')
 
+    def test_script_eval(self):
+        L = self.db.lua
+        L.script('function hello(name, val) return "hello " .. name end')
+        self.assertEqual(L.hello('charlie'), b'hello charlie')
+
     def test_script_queue(self):
         L = self.db.lua
         for i in range(5):
@@ -1514,6 +1519,10 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(L.dequeue('tq', as_list=True), [])
         self.assertEqual(L.dequeue('tq'), b'')  # Empty string.
         self.assertEqual(L.queuesize('tq', as_int=True), 0)
+
+        # Try blocking dequeue (without allowing it to block).
+        L.enqueue('tq', 'item-x')
+        self.assertEqual(L.bdequeue('tq', as_list=True), [b'item-x'])
 
 
 class TestTokyoTyrantScriptingTable(BaseTestCase):
