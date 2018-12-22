@@ -154,13 +154,13 @@ class KyotoTycoon(BaseClient):
         db = self._default_db if db is None else db
         return self._protocol.get(key, db, False)
 
-    def set(self, key, value, db=None, expire_time=None):
+    def set(self, key, value, db=None, expire_time=None, no_reply=False):
         db = self._default_db if db is None else db
-        return self._protocol.set(key, value, db, expire_time)
+        return self._protocol.set(key, value, db, expire_time, no_reply)
 
-    def remove(self, key, db=None):
+    def remove(self, key, db=None, no_reply=False):
         db = self._default_db if db is None else db
-        return self._protocol.remove(key, db)
+        return self._protocol.remove(key, db, no_reply)
 
     def get_bulk(self, keys, db=None):
         db = self._default_db if db is None else db
@@ -173,16 +173,17 @@ class KyotoTycoon(BaseClient):
     def set_bulk(self, __data=None, **kwargs):
         db = kwargs.pop('db', self._default_db)
         expire_time = kwargs.pop('expire_time', None)
+        no_reply = kwargs.pop('no_reply', False)
         if __data is not None:
             if kwargs:
                 raise ValueError('unexpected arguments for set_bulk(): %s'
                                  % ', '.join(sorted(kwargs)))
             kwargs = __data
-        return self._protocol.set_bulk(kwargs, db, expire_time)
+        return self._protocol.set_bulk(kwargs, db, expire_time, no_reply)
 
-    def remove_bulk(self, keys, db=None):
+    def remove_bulk(self, keys, db=None, no_reply=False):
         db = self._default_db if db is None else db
-        return self._protocol.remove_bulk(keys, db)
+        return self._protocol.remove_bulk(keys, db, no_reply)
 
     def script(self, name, __data=None, **params):
         encode_values = params.pop('encode_values', True)

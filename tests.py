@@ -145,6 +145,17 @@ class KyotoTycoonTests(object):
         self.assertEqual(self.db.incr_double('nd'), 1.)
         self.assertEqual(self.db.incr_double('nd', 2.5), 3.5)
 
+    def test_noreply(self):
+        self.assertTrue(self.db.set('k1', 'v1', no_reply=True) is None)
+        self.assertEqual(self.db.get('k1'), 'v1')
+        self.assertTrue(self.db.remove('k1', no_reply=True) is None)
+        self.assertTrue(self.db.get('k1') is None)
+
+        self.assertTrue(self.db.set_bulk({'k1': 'v1'}, no_reply=True) is None)
+        self.assertEqual(self.db.get('k1'), 'v1')
+        self.assertTrue(self.db.remove_bulk(['k1'], no_reply=True) is None)
+        self.assertTrue(self.db.get('k1') is None)
+
     def test_get_raw(self):
         self.db['k1'] = b'v1'
         self.db['k2'] = b'\xff\x00\xff'

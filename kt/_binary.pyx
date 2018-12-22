@@ -652,44 +652,54 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         result = self.get_bulk((bkey,), db, decode_value)
         return result.get(_decode(bkey) if self._decode_keys else bkey)
 
-    def set_bulk(self, data, db, expire_time):
+    def set_bulk(self, data, db, expire_time, no_reply=False):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
+            int flags = 0
+
+        if no_reply:
+            flags = KT_NOREPLY
 
         (request
          .write_magic(KT_SET_BULK)
-         .write_int(0)  # Flags.
+         .write_int(flags)
          .write_keys_values_with_db_expire(data, db, expire_time or EXPIRE)
          .send())
 
-        response = self.response()
-        response.check_error(KT_SET_BULK)
-        return response.read_int()
+        if not no_reply:
+            response = self.response()
+            response.check_error(KT_SET_BULK)
+            return response.read_int()
 
-    def set(self, key, value, db, expire_time):
-        return self.set_bulk({key: value}, db, expire_time)
+    def set(self, key, value, db, expire_time, no_reply=False):
+        return self.set_bulk({key: value}, db, expire_time, no_reply)
 
-    def remove_bulk(self, keys, db):
+    def remove_bulk(self, keys, db, no_reply=False):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
+            int flags = 0
+
+        if no_reply:
+            flags = KT_NOREPLY
 
         if not isinstance(keys, (list, tuple, set)):
             keys = (keys,)
 
         (request
          .write_magic(KT_REMOVE_BULK)
-         .write_int(0)  # Flags.
+         .write_int(flags)  # Flags.
          .write_key_list_with_db(keys, db)
          .send())
 
-        response = self.response()
-        response.check_error(KT_REMOVE_BULK)
-        return response.read_int()
+        if not no_reply:
+            response = self.response()
+            response.check_error(KT_REMOVE_BULK)
+            return response.read_int()
 
-    def remove(self, key, db):
-        return self.remove_bulk((key,), db)
+    def remove(self, key, db, no_reply=False):
+        return self.remove_bulk((key,), db, no_reply)
 
     def script(self, name, data=None, encode_values=True):
         cdef:
