@@ -171,6 +171,13 @@ cdef class _Socket(object):
         return True
 
 
+struct_h = struct.Struct('>H')
+struct_i = struct.Struct('>I')
+struct_ii = struct.Struct('>II')
+struct_l = struct.Struct('>q')
+struct_dbkvxt = struct.Struct('>HIIq')
+
+
 @cython.freelist(32)
 cdef class RequestBuffer(object):
     cdef:
@@ -188,7 +195,7 @@ cdef class RequestBuffer(object):
         return self
 
     cdef RequestBuffer write_int(self, int i):
-        self.buf.write(s_pack('>I', i))
+        self.buf.write(struct_i.pack(i))
         return self
 
     cdef RequestBuffer write_ints(self, ints):
@@ -196,12 +203,16 @@ cdef class RequestBuffer(object):
         self.buf.write(s_pack('>%s' % fmt, *ints))
         return self
 
+    cdef RequestBuffer write_ii(self, i1, i2):
+        self.buf.write(struct_ii.pack(i1, i2))
+        return self
+
     cdef RequestBuffer write_short(self, s):
-        self.buf.write(s_pack('>H', s))
+        self.buf.write(struct_h.pack(s))
         return self
 
     cdef RequestBuffer write_long(self, l):
-        self.buf.write(s_pack('>q', l))
+        self.buf.write(struct_l.pack(l))
         return self
 
     cdef RequestBuffer write_double(self, d):
@@ -212,7 +223,7 @@ cdef class RequestBuffer(object):
 
     cdef RequestBuffer write_bytes(self, bytes data, write_length):
         if write_length:
-            self.write_int(len(data))
+            self.buf.write(struct_i.pack(len(data)))
         self.buf.write(data)
         return self
 
@@ -226,30 +237,31 @@ cdef class RequestBuffer(object):
              .write_bytes(bkey, True))
         return self
 
-    cdef RequestBuffer write_keys_values_with_db_expire(self, data, db,
-                                                        expire):
+    cdef RequestBuffer write_keys_values_with_db_expire(self, data, db, xt):
         cdef bytes bkey, bval
-        self.write_int(len(data))
+
+        self.buf.write(struct_i.pack(len(data)))
         for key, value in data.items():
             bkey = _encode(key)
             bval = self.value_encode(value)
-            (self
-             .write_short(db)
-             .write_ints((len(bkey), len(bval)))
-             .write_long(expire)
-             .write_bytes(bkey, False)
-             .write_bytes(bval, False))
+            self.buf.write(struct_dbkvxt.pack(db, len(bkey), len(bval), xt))
+            self.buf.write(bkey)
+            self.buf.write(bval)
         return self
 
     cdef RequestBuffer write_key(self, key):
-        return self.write_bytes(_encode(key), True)
+        cdef bytes bkey = _encode(key)
+        self.buf.write(struct_i.pack(len(bkey)))
+        self.buf.write(bkey)
+        return self
 
     cdef RequestBuffer write_key_list(self, keys):
         cdef bytes bkey
-        self.write_int(len(keys))
+        self.buf.write(struct_i.pack(len(keys)))
         for key in keys:
             bkey = _encode(key)
-            self.write_bytes(bkey, True)
+            self.buf.write(struct_i.pack(len(bkey)))
+            self.buf.write(bkey)
         return self
 
     cdef RequestBuffer write_keys_values(self, data):
@@ -263,10 +275,11 @@ cdef class RequestBuffer(object):
         cdef:
             bytes bkey = _encode(key)
             bytes bval = self.value_encode(value)
-        return (self
-                .write_ints((len(bkey), len(bval)))
-                .write_bytes(bkey, False)
-                .write_bytes(bval, False))
+
+        self.buf.write(struct_ii.pack(len(bkey), len(bval)))
+        self.buf.write(bkey)
+        self.buf.write(bval)
+        return self
 
     cdef send(self):
         self._socket.send(self.buf.getvalue())
@@ -294,10 +307,10 @@ cdef class BaseResponseHandler(object):
         return value
 
     cdef int read_int(self):
-        return s_unpack('>I', self.read(4))[0]
+        return struct_i.unpack(self._socket.recv(4))[0]
 
     cdef int read_long(self):
-        return s_unpack('>q', self.read(8))[0]
+        return struct_l.unpack(self._socket.recv(8))[0]
 
     cdef double read_double(self):
         cdef:
@@ -329,7 +342,7 @@ cdef class BaseResponseHandler(object):
         cdef:
             bytes bkey, bval
             int klen, vlen
-        klen, vlen = s_unpack('>II', self.read(8))
+        klen, vlen = struct_ii.unpack(self._socket.recv(8))
         bkey = self.read(klen)
         bval = self.read(vlen)
         return ((_decode(bkey) if self._decode_keys else bkey),
@@ -351,7 +364,7 @@ cdef class BaseResponseHandler(object):
             bytes bkey, bval
             int klen, vlen
 
-        _, klen, vlen, _ = s_unpack('>HIIq', self.read(18))
+        _, klen, vlen, _ = struct_dbkvxt.unpack(self._socket.recv(18))
         bkey = self.read(klen)
         bval = self.read(vlen)
         return ((_decode(bkey) if self._decode_keys else bkey),
@@ -721,7 +734,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
             else:
                 bval = _encode(data[key])
             (request
-             .write_ints((len(bkey), len(bval)))
+             .write_ii(len(bkey), len(bval))
              .write_bytes(bkey, False)
              .write_bytes(bval, False))
 
@@ -864,7 +877,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         # fwmkeys method.
         (request
          .write_magic(b'\xc8\x58')
-         .write_ints((len(bprefix), max_keys))
+         .write_ii(len(bprefix), max_keys)
          .write_bytes(bprefix, False)
          .send())
 
@@ -880,7 +893,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         (request
          .write_magic(b'\xc8\x60')
-         .write_ints((len(bkey), value))
+         .write_ii(len(bkey), value)
          .write_bytes(bkey, False)
          .send())
         response = self.response()
@@ -997,7 +1010,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         (request
          .write_magic(b'\xc8\x78')
-         .write_ints((len(bhost), port))
+         .write_ii(len(bhost), port)
          .write_long(timestamp)
          .write_int(opts)
          .write_bytes(bhost, False)
