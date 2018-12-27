@@ -36,7 +36,7 @@ DEF KT_SET_BULK = b'\xb8'
 DEF KT_GET_BULK = b'\xba'
 DEF KT_REMOVE_BULK = b'\xb9'
 DEF KT_PLAY_SCRIPT = b'\xb4'
-DEF KT_ERROR = 0xbf
+DEF KT_ERROR = b'\xbf'
 DEF KT_NOREPLY = 0x01
 DEF EXPIRE = 0x7fffffffffffffff
 
