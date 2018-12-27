@@ -97,11 +97,11 @@ for nrows, chunksiz, kprefix, ksiz, vsiz in SETTINGS:
     with timed('keys (nonlazy)'):
         do_keys_nonlazy()
 
-    with timed('keys'):
-        do_keys()
+    #with timed('keys'):
+    #    do_keys()
 
-    with timed('items'):
-        do_items()
+    #with timed('items'):
+    #    do_items()
 
     print('\n')
     db.clear()
