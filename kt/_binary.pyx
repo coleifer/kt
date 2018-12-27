@@ -4,6 +4,7 @@ from cpython.bytes cimport PyBytes_Check
 from cpython.unicode cimport PyUnicode_AsUTF8String
 from cpython.unicode cimport PyUnicode_Check
 from cpython.version cimport PY_MAJOR_VERSION
+from libc.stdint cimport int32_t
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
@@ -415,20 +416,26 @@ cdef class BaseResponseHandler(object):
             value = b''
         return value
 
-    cdef int read_int(self):
-        return struct_i.unpack(self._socket.recv(4))[0]
+    cdef inline int32_t read_int(self):
+        cdef bytes data = self._socket.recv(4)
+        return (data[0]<<24) + (data[1]<<16) + (data[2]<<8) + data[3]
 
-    cdef int read_long(self):
-        return struct_l.unpack(self._socket.recv(8))[0]
+    cdef inline int64_t read_long(self):
+        cdef bytes data = self._socket.recv(8)
+        return ((data[0]<<56) + (data[1]<<48) + (data[2]<<40) + (data[3]<<32) +
+                (data[4]<<24) + (data[5]<<16) + (data[6]<<8) + data[7])
 
     cdef double read_double(self):
-        cdef:
-            int64_t i, m
-        i, m = s_unpack('>QQ', self.read(16))
+        cdef int64_t i, m
+        i = self.read_long()
+        m = self.read_long()
         return i + (m * 1e-12)
 
-    cdef bytes read_bytes(self):
-        return self.read(self.read_int())
+    cdef inline bytes read_bytes(self):
+        cdef int32_t n = self.read_int()
+        if n > 0:
+            return self._socket.recv(n)
+        return b''
 
     cdef read_key(self):
         cdef bytes bkey = self.read_bytes()
@@ -451,9 +458,10 @@ cdef class BaseResponseHandler(object):
         cdef:
             bytes bkey, bval
             int klen, vlen
-        klen, vlen = struct_ii.unpack(self._socket.recv(8))
-        bkey = self.read(klen)
-        bval = self.read(vlen)
+        klen = self.read_int()
+        vlen = self.read_int()
+        bkey = self._socket.recv(klen)
+        bval = self._socket.recv(vlen)
         return ((_decode(bkey) if self._decode_keys else bkey),
                 self.value_decode(bval) if decode_value else bval)
 
@@ -473,9 +481,14 @@ cdef class BaseResponseHandler(object):
             bytes bkey, bval
             int klen, vlen
 
-        _, klen, vlen, _ = struct_dbkvxt.unpack(self._socket.recv(18))
-        bkey = self.read(klen)
-        bval = self.read(vlen)
+        self._socket.recv(2)  # DB.
+        klen = self.read_int()
+        vlen = self.read_int()
+        self._socket.recv(8)  # xt.
+
+        bkey = self._socket.recv(klen)
+        bval = self._socket.recv(vlen)
+
         return ((_decode(bkey) if self._decode_keys else bkey),
                 self.value_decode(bval) if decode_value else bval)
 
@@ -492,32 +505,25 @@ cdef class BaseResponseHandler(object):
 
 
 cdef class KTResponseHandler(BaseResponseHandler):
-    cdef int check_error(self, magic) except -1:
-        cdef:
-            bytes bmagic
-            int imagic
-
-        bmagic = self.read(1)
+    cdef inline int check_error(self, magic) except -1:
+        cdef bytes bmagic = self._socket.recv(1)
         if bmagic == magic:
             return 0
         elif bmagic == KT_ERROR:
             raise ProtocolError('Internal server error processing request.')
         else:
-            raise ServerError('Unexpected server response: %s' % bmagic)
+            raise ServerError('Unexpected server response: %r' % bmagic)
 
 
 cdef class TTResponseHandler(BaseResponseHandler):
-    cdef int check_error(self) except -1:
-        cdef:
-            bytes bmagic
-            int imagic
-
-        bmagic = self.read(1)
-        imagic = ord(bmagic)
-        if imagic == 0 or imagic == 1:
-            return imagic
+    cdef inline int check_error(self) except -1:
+        cdef bytes bmagic = self._socket.recv(1)
+        if bmagic == b'\x00':
+            return 0
+        elif bmagic == b'\x01':
+            return 1
         else:
-            raise ServerError('Unexpected server response: %x' % imagic)
+            raise ServerError('Unexpected server response: %r' % bmagic)
 
 
 class _ConnectionState(object):
