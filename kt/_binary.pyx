@@ -285,6 +285,8 @@ struct_h = struct.Struct('>H')
 struct_i = struct.Struct('>I')
 struct_ii = struct.Struct('>II')
 struct_l = struct.Struct('>q')
+struct_q = struct.Struct('>Q')
+struct_qq = struct.Struct('>QQ')
 struct_dbkvxt = struct.Struct('>HIIq')
 
 
@@ -328,7 +330,7 @@ cdef class RequestBuffer(object):
     cdef RequestBuffer write_double(self, d):
         m, i = math.modf(d)
         m, i = int(m * 1e12), int(i)
-        self.buf.write(s_pack('>QQ', i, m))
+        self.buf.write(struct_qq.pack(i, m))
         return self
 
     cdef RequestBuffer write_bytes(self, bytes data, write_length):
@@ -417,18 +419,16 @@ cdef class BaseResponseHandler(object):
         return value
 
     cdef inline int32_t read_int(self):
-        cdef bytes data = self._socket.recv(4)
+        cdef bytes bdata = self._socket.recv(4)
+        cdef unsigned char *data = <unsigned char *>bdata
         return (data[0]<<24) + (data[1]<<16) + (data[2]<<8) + data[3]
 
     cdef inline int64_t read_long(self):
-        cdef bytes data = self._socket.recv(8)
-        return ((data[0]<<56) + (data[1]<<48) + (data[2]<<40) + (data[3]<<32) +
-                (data[4]<<24) + (data[5]<<16) + (data[6]<<8) + data[7])
+        return struct_q.unpack(self._socket.recv(8))[0]
 
     cdef double read_double(self):
-        cdef int64_t i, m
-        i = self.read_long()
-        m = self.read_long()
+        cdef long i, m
+        i, m = struct_qq.unpack(self._socket.recv(16))
         return i + (m * 1e-12)
 
     cdef inline bytes read_bytes(self):
