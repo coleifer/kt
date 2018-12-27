@@ -79,7 +79,7 @@ def noop_decode(obj):
     return obj
 
 
-cdef int READSIZE = 64 * 1024
+cdef int READSIZE = 16 * 1024
 
 
 cdef class _Socket(object):
