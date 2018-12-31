@@ -156,12 +156,12 @@ class KyotoTycoonTests(object):
         self.assertTrue(self.db.remove_bulk(['k1'], no_reply=True) is None)
         self.assertTrue(self.db.get('k1') is None)
 
-    def test_get_raw(self):
+    def test_get_bytes(self):
         self.db['k1'] = b'v1'
         self.db['k2'] = b'\xff\x00\xff'
-        self.assertEqual(self.db.get_raw('k1'), b'v1')
-        self.assertEqual(self.db.get_raw('k2'), b'\xff\x00\xff')
-        self.assertEqual(self.db.get_bulk_raw(['k1', 'k2']), {
+        self.assertEqual(self.db.get_bytes('k1'), b'v1')
+        self.assertEqual(self.db.get_bytes('k2'), b'\xff\x00\xff')
+        self.assertEqual(self.db.get_bulk(['k1', 'k2'], decode_values=False), {
             'k1': b'v1', 'k2': b'\xff\x00\xff'})
 
     def test_large_read_write(self):
@@ -662,7 +662,7 @@ class TestKyotoTycoonScripting(BaseTestCase):
         for item in data:
             L.lrpush(key='l1', value=item)
 
-        raw_data = self.db.get_raw('l1')
+        raw_data = self.db.get_bytes('l1')
         self.assertEqual(P.deserialize_list(raw_data), data)
         self.assertEqual(L.lrange(key='l1'), dict((str(i), data[i])
                                                   for i in range(len(data))))
@@ -688,7 +688,7 @@ class TestKyotoTycoonScripting(BaseTestCase):
         del self.db['h1']
 
         L.hmset(table_key='h1', **data)
-        raw_data = self.db.get_raw('h1')
+        raw_data = self.db.get_bytes('h1')
         self.assertEqual(self.db._protocol.deserialize_dict(raw_data), data)
         self.assertEqual(L.hgetall(table_key='h1'), data)
 
@@ -1124,12 +1124,12 @@ class TokyoTyrantTests(object):
         self.assertEqual(sorted(list(self.db.items())), [
             ('k2', 'v2'), ('key', 'foo')])
 
-        self.db.setnr('k1', 'v1x')
+        self.db.set('k1', 'v1x', no_reply=True)
         self.assertEqual(self.db['k1'], 'v1x')
         del self.db['k1']
 
         data = {'x1': 'y1', 'x2': 'y2', 'x3': 'y3'}
-        self.db.setnr_bulk(data)
+        self.db.set_bulk(data, no_reply=True)
         self.assertEqual(sorted(list(self.db.items())), [
             ('k2', 'v2'), ('key', 'foo'), ('x1', 'y1'), ('x2', 'y2'),
             ('x3', 'y3')])
@@ -1146,12 +1146,12 @@ class TokyoTyrantTests(object):
         self.assertEqual(self.db.incr_double('nd'), 1.)
         self.assertEqual(self.db.incr_double('nd', 2.5), 3.5)
 
-    def test_get_raw(self):
+    def test_get_bytes(self):
         self.db['k1'] = b'v1'
         self.db['k2'] = b'\xff\x00\xff'
-        self.assertEqual(self.db.get_raw('k1'), b'v1')
-        self.assertEqual(self.db.get_raw('k2'), b'\xff\x00\xff')
-        self.assertEqual(self.db.get_bulk_raw(['k1', 'k2']), {
+        self.assertEqual(self.db.get_bytes('k1'), b'v1')
+        self.assertEqual(self.db.get_bytes('k2'), b'\xff\x00\xff')
+        self.assertEqual(self.db.get_bulk(['k1', 'k2'], decode_values=False), {
             'k1': b'v1', 'k2': b'\xff\x00\xff'})
 
     def test_large_read_write(self):
@@ -1263,9 +1263,12 @@ class TestTokyoTyrantBTree(TokyoTyrantTests, BaseTestCase):
         self.db.remove_bulk(['k02', 'k03', 'k04', 'k05', 'k06', 'k07', 'k08'])
         self.assertEqual(self.db.match_prefix('k0'), ['k00', 'k01', 'k09'])
 
-        self.assertEqual(self.db.iter_from('k16'), {
-            'k16': 'v16', 'k17': 'v17', 'k18': 'v18', 'k19': 'v19'})
-        self.assertEqual(self.db.iter_from('kx'), {})
+        self.assertEqual(list(self.db.iter_from('k16')), [
+            ('k16', 'v16'),
+            ('k17', 'v17'),
+            ('k18', 'v18'),
+            ('k19', 'v19')])
+        self.assertEqual(list(self.db.iter_from('kx')), [])
 
     def test_duplicates(self):
         # When using an in-memory B-Tree duplicates are not stored.
@@ -1423,14 +1426,15 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(self.db.script('seize', 'k2'), b'v2')
         self.assertFalse('k2' in self.db)
         self.assertEqual(self.db.script('seize', 'k2'), b'')
-        self.assertEqual(self.db.lua.seize('k3', decode_result=True), 'v3')
+        self.assertEqual(self.db.script('seize', 'k3', decode_value=True),
+                         'v3')
 
     def test_script_match(self):
         self.db.update(key='value', key_a='a', key_b='bbb', ky_a='aa')
 
         def assertDict(key, expected, max_result=None, script='match_pattern'):
-            result = self.db.script(script, key, max_result,
-                                    decode_result=True, as_dict=True)
+            result = self.db.script(script, key, max_result, decode_value=True,
+                                    as_dict=True)
             self.assertEqual(result, expected)
 
         assertDict('key*', {'key': 'value', 'key_a': 'a', 'key_b': 'bbb'})
@@ -1460,7 +1464,7 @@ class TestTokyoTyrantScripting(BaseTestCase):
 
     def test_as_list(self):
         def assertSplit(s, delim, expected):
-            result = self.db.script('split', s, delim, decode_result=True,
+            result = self.db.script('split', s, delim, decode_value=True,
                                     as_list=True)
             self.assertEqual(result, expected)
 
@@ -1503,16 +1507,16 @@ class TestTokyoTyrantScripting(BaseTestCase):
         self.assertEqual(L.queuesize('tq', as_int=True), 5)
 
         # By default one item is dequeued.
-        item = L.dequeue('tq', decode_result=True, as_list=True)
+        item = L.dequeue('tq', decode_value=True, as_list=True)
         self.assertEqual(item, ['item-0'])
         self.assertEqual(L.queuesize('tq', as_int=True), 4)
 
         # We can dequeue multiple items, which are newline-separated.
-        items = L.dequeue('tq', 3, decode_result=True, as_list=True)
+        items = L.dequeue('tq', 3, decode_value=True, as_list=True)
         self.assertEqual(items, ['item-1', 'item-2', 'item-3'])
 
         # It's OK if fewer items exist.
-        items = L.dequeue('tq', 3, decode_result=True, as_list=True)
+        items = L.dequeue('tq', 3, decode_value=True, as_list=True)
         self.assertEqual(items, ['item-4'])
 
         # No items -> empty string and zero count.
@@ -1537,11 +1541,11 @@ class TestTokyoTyrantScriptingTable(BaseTestCase):
         self.db['t1'] = {'k1': 'v1', 'k2': 'v2'}
         self.db['t2'] = {'k2': 'v2', 'k3': 'v3'}
         res = self.db.script('seize', 't2', encode_value=False,
-                             decode_result=True)
+                             decode_value=True)
         self.assertEqual(res, {'k2': 'v2', 'k3': 'v3'})
 
         res = self.db.script('seize', 't2', encode_value=False,
-                             decode_result=True)
+                             decode_value=True)
         self.assertEqual(res, {})
 
         res = self.db.script('table_get', 't1', 'k2', encode_value=False)

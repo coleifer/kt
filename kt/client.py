@@ -116,7 +116,7 @@ class ScriptRunner(object):
 
     def __getattr__(self, attr_name):
         def run_script(*args, **kwargs):
-            return self.client.script(attr_name, *args, **kwargs)
+            return self.client._script(attr_name, *args, **kwargs)
         return run_script
 
 
@@ -188,6 +188,15 @@ class KyotoTycoon(BaseClient):
 
     def remove(self, key, db=None, no_reply=False):
         return self._protocol.remove(key, db, no_reply)
+
+    def _script(self, name, __data=None, no_reply=False, encode_values=True,
+                decode_values=True, **kwargs):
+        if __data is None:
+            __data = kwargs
+        elif kwargs:
+            __data.update(kwargs)
+        return self._protocol.script(name, __data, no_reply, encode_values,
+                                     decode_values)
 
     def script(self, name, data=None, no_reply=False, encode_values=True,
                decode_values=True):
@@ -402,14 +411,15 @@ class TokyoTyrant(BaseClient):
                 return {} if as_dict else []
 
             # Split on newlines -- dicts are additionally split on tabs.
-            delim = '\n' if decode_result else b'\n'
+            delim = '\n' if decode_value else b'\n'
             res = res.rstrip(delim).split(delim)
             if as_dict:
-                delim = '\t' if decode_result else b'\t'
+                delim = '\t' if decode_value else b'\t'
                 res = dict([r.split(delim) for r in res])
         elif as_int:
             res = int(res) if res else None
         return res
+    _script = script
 
     def clear(self):
         return self._protocol.vanish()
@@ -491,7 +501,9 @@ class TokyoTyrant(BaseClient):
         return self._protocol.misc_getpart(key, start or 0, end, decode_value)
 
     def misc(self, cmd, args=None, update_log=True, decode_values=False):
-        return self._protocol.misc(cmd, args, update_log, decode_values)
+        ok, data = self._protocol.misc(cmd, args, update_log, decode_values)
+        if ok:
+            return data
 
     @property
     def size(self):

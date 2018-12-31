@@ -1311,7 +1311,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         request.send()
         response = self.response()
-        success = self.check_error() == 0
+        success = response.check_error() == 0
         return success, response.read_values(decode_values)
 
     cdef _misc_kv(self, cmd, key, value, update_log, encode_value):
@@ -1342,7 +1342,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
                              encode_value)
 
     def misc_out(self, key, update_log=True):
-        ok, _ = self._misc('out', [_encode(key)], update_log)
+        ok, _ = self.misc('out', [key], update_log)
         return ok
 
     def misc_get(self, key, decode_value=True):
@@ -1361,9 +1361,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         ok, _ = self.misc('putlist', accum, update_log)
         return ok
 
-    def _misc_key_list(self, cmd, keys, update_log):
-        cdef list accum = [_encode(key) for key in keys]
-        return self.misc(cmd, accum, update_log)
+    cdef _misc_key_list(self, cmd, keys, update_log):
+        return self.misc(cmd, keys, update_log)
 
     def misc_outlist(self, keys, update_log=True):
         ok, _ = self._misc_key_list('outlist', keys, update_log)
@@ -1406,7 +1405,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return accum
 
     def misc_getlist(self, keys, decode_values=True):
-        ok, data = self._misc_key_list('getlist', keys, False, False)
+        ok, data = self._misc_key_list('getlist', keys, False)
         return self._misc_list_to_dict(data, decode_values)
 
     def misc_getpart(self, key, start=0, length=None, decode_value=True):
@@ -1418,7 +1417,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return result[0]
 
     def misc_iterinit(self, key=None):
-        ok, _ = self._misc('iterinit', [key] if key else [], False)
+        ok, _ = self.misc('iterinit', [key] if key else [], False)
         return ok
 
     def misc_iternext(self, decode_value=True):
@@ -1465,7 +1464,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if max_records is not None:
             args.append(str(max_records))
         ok, data = self.misc('regex', args, False, False)
-        return self._misc_list_of_lists(data, decode_values)
+        return self._misc_list_of_items(data, decode_values)
 
     def misc_range(self, start, stop=None, max_records=0, decode_values=True):
         args = [start, str(max_records)]
@@ -1480,7 +1479,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if stop is not None:
             args.append(stop)
         ok, data = self.misc('range', args, False, False)
-        return self._misc_list_of_lists(data)
+        return self._misc_list_of_items(data, decode_values)
 
     def misc_setindex(self, column, index_type, update_log=True):
         args = [column, str(index_type)]
