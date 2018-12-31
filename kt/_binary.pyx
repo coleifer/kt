@@ -282,6 +282,7 @@ cdef class SocketPool(object):
 
 
 struct_h = struct.Struct('>H')
+struct_hi = struct.Struct('>HI')
 struct_i = struct.Struct('>I')
 struct_ii = struct.Struct('>II')
 struct_l = struct.Struct('>q')
@@ -340,22 +341,56 @@ cdef class RequestBuffer(object):
         return self
 
     cdef RequestBuffer write_key_list_with_db(self, keys, db):
+        # [k0, k1, k2], db
         cdef bytes bkey
         self.write_int(len(keys))
         for key in keys:
             bkey = _encode(key)
-            (self
-             .write_short(db)
-             .write_bytes(bkey, True))
+            self.buf.write(struct_hi.pack(db, len(bkey)))
+            self.buf.write(bkey)
         return self
 
-    cdef RequestBuffer write_keys_values_with_db_expire(self, data, db, xt):
+    cdef RequestBuffer write_db_key_list(self, data):
+        # [(db0, k0), (db1, k1)...]
+        cdef bytes bkey
+        self.write_int(len(keys))
+        for db, key in data:
+            bkey = _encode(key)
+            self.buf.write(struct_hi.pack(db, len(bkey)))
+            self.buf.write(bkey)
+        return self
+
+    cdef RequestBuffer write_key_value_list_with_db_expire(self, data, db, xt,
+                                                           encode_values):
+        # [(k0, v0), (k1, v1)...], db, xt
         cdef bytes bkey, bval
 
         self.buf.write(struct_i.pack(len(data)))
         for key, value in data.items():
             bkey = _encode(key)
-            bval = self.value_encode(value)
+            if encode_values:
+                bval = self.value_encode(value)
+            else:
+                bval = _encode(value)
+            self.buf.write(struct_dbkvxt.pack(db, len(bkey), len(bval), xt))
+            self.buf.write(bkey)
+            self.buf.write(bval)
+        return self
+
+    cdef RequestBuffer write_db_key_value_expire_list(self, data,
+                                                      encode_values):
+        # [(db0, k0, v0, xt0), (db1, k1, v1, xt1)...]
+        cdef bytes bkey, bval
+
+        self.buf.write(struct_i.pack(len(data)))
+        for db, key, value, xt in data:
+            bkey = _encode(key)
+            if encode_values:
+                bval = self.value_encode(value)
+            else:
+                bval = _encode(value)
+            if xt is None:
+                xt = EXPIRE
             self.buf.write(struct_dbkvxt.pack(db, len(bkey), len(bval), xt))
             self.buf.write(bkey)
             self.buf.write(bval)
@@ -376,17 +411,15 @@ cdef class RequestBuffer(object):
             self.buf.write(bkey)
         return self
 
-    cdef RequestBuffer write_keys_values(self, data):
-        cdef bytes bkey, bval
-        self.write_int(len(data))
-        for key, value in data.items():
-            self.write_key_value(key, value)
-        return self
-
-    cdef RequestBuffer write_key_value(self, key, value):
+    cdef RequestBuffer write_key_value(self, key, value, encode_value):
         cdef:
             bytes bkey = _encode(key)
-            bytes bval = self.value_encode(value)
+            bytes bval
+
+        if encode_value:
+            bval = self.value_encode(value)
+        else:
+            bval = _encode(value)
 
         self.buf.write(struct_ii.pack(len(bkey), len(bval)))
         self.buf.write(bkey)
@@ -450,57 +483,71 @@ cdef class BaseResponseHandler(object):
             int n = self.read_int()
             list accum = []
 
-        for i in range(n):
-            accum.append(self.read_key())
+        if self._decode_keys:
+            for i in range(n):
+                accum.append(_decode(self.read_bytes()))
+        else:
+            for i in range(n):
+                accum.append(self.read_bytes())
+
         return accum
 
-    cdef tuple read_key_value(self, decode_value):
+    cdef list read_keys_values(self, decode_values):
         cdef:
-            bytes bkey, bval
-            int klen, vlen
-        klen = self.read_int()
-        vlen = self.read_int()
-        bkey = self._socket.recv(klen)
-        bval = self._socket.recv(vlen)
-        return ((_decode(bkey) if self._decode_keys else bkey),
-                self.value_decode(bval) if decode_value else bval)
+            list accum = []
+            int i, klen, vlen, n_items
 
-    cdef dict read_keys_values(self, decode_values):
+        n_items = self.read_int()
+        for i in range(n_items):
+            klen = self.read_int()
+            vlen = self.read_int()
+            key = self._socket.recv(klen)
+            value = self._socket.recv(vlen)
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_values:
+                value = self.value_decode(value)
+            accum.append((key, value))
+        return accum
+
+    cdef dict read_keys_values_dict(self, decode_values):
+        return dict(self.read_keys_values(decode_values))
+
+    cdef list read_keys_values_with_db_expire(self, decode_values):
         cdef:
+            int i, klen, vlen, n_items
+            list accum = []
+
+        n_items = self.read_int()
+        for i in range(n_items):
+            db, klen, vlen, xt = struct_dbkvxt.unpack(self._socket.recv(18))
+            key = self._socket.recv(klen)
+            value = self._socket.recv(vlen)
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_values:
+                value = self.value_decode(value)
+            accum.append((db, key, value, xt))
+
+        return accum
+
+    cdef dict read_keys_values_with_db_expire_dict(self, decode_values):
+        cdef:
+            int klen, vlen
             dict accum = {}
             int i, n_items
 
         n_items = self.read_int()
         for i in range(n_items):
-            key, value = self.read_key_value(decode_values)
+            _, klen, vlen, _ = struct_dbkvxt.unpack(self._socket.recv(18))
+            key = self._socket.recv(klen)
+            value = self._socket.recv(vlen)
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_values:
+                value = self.value_decode(value)
             accum[key] = value
-        return accum
 
-    cdef tuple read_key_value_with_db_expire(self, decode_value):
-        cdef:
-            bytes bkey, bval
-            int klen, vlen
-
-        self._socket.recv(2)  # DB.
-        klen = self.read_int()
-        vlen = self.read_int()
-        self._socket.recv(8)  # xt.
-
-        bkey = self._socket.recv(klen)
-        bval = self._socket.recv(vlen)
-
-        return ((_decode(bkey) if self._decode_keys else bkey),
-                self.value_decode(bval) if decode_value else bval)
-
-    cdef dict read_keys_values_with_db_expire(self, decode_values):
-        cdef:
-            dict accum = {}
-            int i, n_items
-
-        n_items = self.read_int()
-        for i in range(n_items):
-            key, value = self.read_key_value_with_db_expire(decode_values)
-            accum[key] = value
         return accum
 
 
@@ -659,7 +706,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
             self._decode_keys,
             self.decode_value)
 
-    def get_bulk(self, keys, db=None, decode_value=True):
+    cdef KTResponseHandler _get_bulk(self, keys, db, flat):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
@@ -670,70 +717,118 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         if not isinstance(keys, (list, tuple, set)):
             keys = (keys,)
 
-        (request
-         .write_magic(KT_GET_BULK)
-         .write_int(0)  # Flags.
-         .write_key_list_with_db(keys, db)
-         .send())
+        request.write_magic(KT_GET_BULK).write_int(0)
+        if flat:
+            request.write_key_list_with_db(keys, db)
+        else:
+            request.write_db_key_list(keys)
+        request.send()
 
         response = self.response()
         response.check_error(KT_GET_BULK)
+        return response
+
+    def get_bulk(self, keys, db=None, decode_value=True):
+        # Accepts flat list of keys and a db index, returns a dict of k->v.
+        cdef KTResponseHandler = self._get_bulk(keys, db, True)
+        return response.read_keys_values_with_db_expire_dict(decode_value)
+
+    def get_bulk_details(self, keys, db=None, decode_value=True):
+        # Accepts flat list of keys and a db index, returns a list of
+        # (db, key, value, xt) tuples.
+        cdef KTResponseHandler = self._get_bulk(keys, db, True)
+        return response.read_keys_values_with_db_expire(decode_value)
+
+    def get_bulk_raw(self, db_key_list, decode_value=True):
+        # Accepts list of (db, key) tuples, returns a dict of k->v.
+        cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
+        return response.read_keys_values_with_db_expire_dict(decode_value)
+
+    def get_bulk_raw_details(self, db_key_list, decode_value=True):
+        # Accepts list of (db, key) tuples, returns a list of (db, k, v, xt).
+        cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
         return response.read_keys_values_with_db_expire(decode_value)
 
     def get(self, key, db=None, decode_value=True):
-        cdef bytes bkey = _encode(key)
-        result = self.get_bulk((bkey,), db, decode_value)
-        return result.get(_decode(bkey) if self._decode_keys else bkey)
+        result = self.get_bulk_details((key,), db, decode_value)
+        if result:
+            return result[0][2]  # [(db, key, VALUE, xt)].
 
-    def set_bulk(self, data, db, expire_time, no_reply=False):
+    cdef _set_bulk(self, data, db, expire_time, no_reply, encode_values,
+                   as_dict):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
-            int flags = 0
+            int flags = KT_NOREPLY if no_reply else 0
 
-        if no_reply:
-            flags = KT_NOREPLY
+        if db is None:
+            db = self.default_db
 
-        (request
-         .write_magic(KT_SET_BULK)
-         .write_int(flags)
-         .write_keys_values_with_db_expire(data, db, expire_time or EXPIRE)
-         .send())
+        request.write_magic(KT_SET_BULK).write_int(flags)
 
+        if as_dict:
+            # data is {k0: v0, k1: v1...}
+            request.write_key_value_list_with_db_expire(
+                data,
+                db,
+                expire_time or EXPIRE,
+                encode_values)
+        else:
+            # data is [(db0, k0, v0, xt0), (db1, k1, v1, xt1)...]
+            request.write_db_key_value_expire_list(data, encode_values)
+
+        request.send()
         if not no_reply:
             response = self.response()
             response.check_error(KT_SET_BULK)
             return response.read_int()
 
-    def set(self, key, value, db, expire_time, no_reply=False):
-        return self.set_bulk({key: value}, db, expire_time, no_reply)
+    def set_bulk(self, data, db, expire_time, no_reply=False,
+                 encode_values=True):
+        return self._set_bulk(data, db, expire_time, no_reply, encode_values,
+                              True)
 
-    def remove_bulk(self, keys, db, no_reply=False):
+    def set_bulk_raw(self, data, no_reply, encode_values):
+        return self._set_bulk(data, None, None, no_reply, encode_values, False)
+
+    def set(self, key, value, db, expire_time, no_reply=False,
+            encode_value=True):
+        return self._set_bulk({key: value}, db, expire_time, no_reply,
+                              encode_value, True)
+
+    cdef _remove_bulk(self, keys, db, no_reply, flat):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
-            int flags = 0
-
-        if no_reply:
-            flags = KT_NOREPLY
+            int flags = KT_NOREPLY if no_reply else 0
 
         if not isinstance(keys, (list, tuple, set)):
             keys = (keys,)
 
-        (request
-         .write_magic(KT_REMOVE_BULK)
-         .write_int(flags)  # Flags.
-         .write_key_list_with_db(keys, db)
-         .send())
+        request.write_magic(KT_REMOVE_BULK).write_int(flags)
+        if flat:
+            # [k0, k1...]
+            request.write_key_list_with_db(keys, db)
+        else:
+            # [(db0, k0), (db1, k1)...]
+            request.write_db_key_list(keys)
+        request.send()
 
         if not no_reply:
             response = self.response()
             response.check_error(KT_REMOVE_BULK)
             return response.read_int()
 
-    def remove(self, key, db, no_reply=False):
-        return self.remove_bulk((key,), db, no_reply)
+    def remove_bulk(self, keys, db, no_reply=False):
+        return self._remove_bulk(keys, db, no_reply, True)
 
+    def remove_bulk_raw(self, db_key_list, no_reply=False):
+        return self._remove_bulk(db_key_list, None, no_reply, False)
+
+    def remove(self, key, db, no_reply=False):
+        return self._remove_bulk((key,), db, no_reply, True)
+
+    # XXX: here
     def script(self, name, data=None, encode_values=True):
         cdef:
             bytes bname = _encode(name)
@@ -763,7 +858,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         response = self.response()
         response.check_error(KT_PLAY_SCRIPT)
 
-        return response.read_keys_values(encode_values)
+        return response.read_keys_values_dict(encode_values)
 
 
 cdef class TTBinaryProtocol(BinaryProtocol):
@@ -778,7 +873,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         (request
          .write_magic(bmagic)
-         .write_key_value(key, value)
+         .write_key_value(key, value, True)
          .send())
 
         return self.response().check_error()
@@ -812,7 +907,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         (request
          .write_magic(b'\xc8\x18')
-         .write_key_value(key, value)
+         .write_key_value(key, value, True)
          .send())
 
     def mputnr(self, data):
@@ -820,7 +915,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         for key, value in data.items():
             (request
              .write_magic(b'\xc8\x18')
-             .write_key_value(key, value)
+             .write_key_value(key, value, True)
              .send())
 
     def out(self, key):
@@ -855,7 +950,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         response = self.response()
         if not response.check_error():
-            return response.read_keys_values(decode_values)
+            return response.read_keys_values_dict(decode_values)
 
     def vsiz(self, key):
         cdef:
