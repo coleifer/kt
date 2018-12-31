@@ -284,6 +284,11 @@ class HttpProtocol(object):
         resp, status = self.request('/check', {'key': key}, db, (450,))
         return status != 450
 
+    def length(self, key, db=None):
+        resp, status = self.request('/check', {'key': key}, db, (450,), False)
+        if status == 200:
+            return resp[b'vsiz']
+
     def seize(self, key, db=None, decode_value=True):
         resp, status = self.request('/seize', {'key': key}, db, (450,),
                                     decode_keys=False)
@@ -391,7 +396,7 @@ class HttpProtocol(object):
 
     def cur_set_value(self, cursor_id, value, step=False, expire_time=None,
                       encode_value=True):
-        if encode_values:
+        if encode_value:
             value = self.encode_value(value)
         data = {'value': value}
         if expire_time is not None:

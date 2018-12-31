@@ -744,53 +744,53 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         response.check_error(KT_GET_BULK)
         return response
 
-    def get_bulk(self, keys, db=None, decode_value=True):
+    def get_bulk(self, keys, db=None, decode_values=True):
         """
         Get multiple key/value pairs in a single request.
 
         :param list keys: a flat list of keys
         :param int db: db index
-        :param bint decode_value: deserialize values after reading
+        :param bint decode_values: deserialize values after reading
         :return: a dict of key, value for matching records
         """
         cdef KTResponseHandler resp = self._get_bulk(keys, db, True)
-        return resp.read_keys_values_with_db_expire_dict(decode_value)
+        return resp.read_keys_values_with_db_expire_dict(decode_values)
 
-    def get_bulk_details(self, keys, db=None, decode_value=True):
+    def get_bulk_details(self, keys, db=None, decode_values=True):
         """
         Get multiple key/value pairs in a single request.
 
         :param list keys: a flat list of keys
         :param int db: db index
-        :param bint decode_value: deserialize values after reading
+        :param bint decode_values: deserialize values after reading
         :return: a list of (db, key, value, expire_time) tuples.
         """
         cdef KTResponseHandler resp = self._get_bulk(keys, db, True)
-        return resp.read_keys_values_with_db_expire(decode_value)
+        return resp.read_keys_values_with_db_expire(decode_values)
 
-    def get_bulk_raw(self, db_key_list, decode_value=True):
+    def get_bulk_raw(self, db_key_list, decode_values=True):
         """
         Get multiple key/value pairs in a single request.
 
         :param list db_key_list: a list of (db, key) tuples
         :param int db: db index
-        :param bint decode_value: deserialize values after reading
+        :param bint decode_values: deserialize values after reading
         :return: a dict of key, value for matching records
         """
         cdef KTResponseHandler resp = self._get_bulk(db_key_list, None, False)
-        return resp.read_keys_values_with_db_expire_dict(decode_value)
+        return resp.read_keys_values_with_db_expire_dict(decode_values)
 
-    def get_bulk_raw_details(self, db_key_list, decode_value=True):
+    def get_bulk_raw_details(self, db_key_list, decode_values=True):
         """
         Get multiple key/value pairs in a single request.
 
         :param list db_key_list: a list of (db, key) tuples
         :param int db: db index
-        :param bint decode_value: decode values
+        :param bint decode_values: decode values
         :return: a list of (db, key, value, expire_time) tuples.
         """
         cdef KTResponseHandler resp = self._get_bulk(db_key_list, None, False)
-        return resp.read_keys_values_with_db_expire(decode_value)
+        return resp.read_keys_values_with_db_expire(decode_values)
 
     def get(self, key, db=None, decode_value=True):
         """
@@ -1059,6 +1059,28 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             bytes bkey = _encode(key)
             RequestBuffer request = self.request()
         request.send_simple(struct_2si.pack(bmagic, len(bkey)) + bkey)
+
+    def seize(self, key, decode_value=True):
+        cdef:
+            bytes bkey = _encode(key)
+            RequestBuffer request = self.request()
+            TTResponseHandler response
+
+        (request
+         .write_magic(b'\xc8\x30')  # Get.
+         .write_bytes(bkey, True)
+         .write_magic(b'\xc8\x20')  # Out.
+         .write_bytes(bkey, True)
+         .send())
+
+        response = self.response()
+        value = None
+        if not response.check_error():
+            value = response.read_bytes()
+            if decode_value:
+                value = self.decode_value(value)
+        if not response.check_error():
+            return value
 
     def out(self, key):
         self._simple_key_command(b'\xc8\x20', key)

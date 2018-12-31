@@ -174,8 +174,8 @@ class KyotoTycoonTests(object):
     def test_protocol_binary(self):
         self._test_protocol(self.db._protocol)
 
-    def test_protocol_http(self):
-        self._test_protocol(self.db._protocol_http)
+    def test_http(self):
+        self._test_protocol(self.db._http)
 
     def _test_protocol(self, p):
         # Both protocols support some basic methods, which we will test (namely
@@ -205,7 +205,7 @@ class KyotoTycoonTests(object):
         self.assertEqual(p.remove_bulk(['k2'], 0), 1)
 
     def test_http_protocol_special(self):
-        p = self.db._protocol_http
+        p = self.db._http
         p.append('key', 'abc', 0, None)
         p.append('key', 'def', 0, None)
         self.assertEqual(p.get('key', 0), 'abcdef')

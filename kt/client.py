@@ -134,127 +134,123 @@ class KyotoTycoon(BaseClient):
             encode_value=self._encode_value,
             decode_value=self._decode_value,
             timeout=self._timeout,
-            connection_pool=self._connection_pool)
-        self._protocol_http = HttpProtocol(
+            connection_pool=self._connection_pool,
+            default_db=self._default_db)
+        self._http = HttpProtocol(
             host=self._host,
             port=self._port,
             decode_keys=self._decode_keys,
             encode_value=self._encode_value,
-            decode_value=self._decode_value)
+            decode_value=self._decode_value,
+            default_db=self._default_db)
 
     def close(self, allow_reuse=True):
         self._protocol.close(allow_reuse)
-        self._protocol_http.close()
+        self._http.close()
+
+    def get_bulk(self, keys, db=None, decode_values=True):
+        return self._protocol.get_bulk(keys, db, decode_values)
+
+    def get_bulk_details(self, keys, db=None, decode_values=True):
+        return self._protocol.get_bulk_details(keys, db, decode_values)
+
+    def get_bulk_raw(self, db_key_list, decode_values=True):
+        return self._protocol.get_bulk_raw(db_key_list, decode_values)
+
+    def get_bulk_raw_details(self, db_key_list, decode_values=True):
+        return self._protocol.get_bulk_raw_details(db_key_list, decode_values)
 
     def get(self, key, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol.get(key, db)
+        return self._protocol.get(key, db, True)
 
-    def get_raw(self, key, db=None):
-        db = self._default_db if db is None else db
+    def get_bytes(self, key, db=None):
         return self._protocol.get(key, db, False)
 
+    def set_bulk(self, data, db=None, expire_time=None, no_reply=False,
+                 encode_values=True):
+        return self._protocol.set_bulk(data, db, expire_time, no_reply,
+                                       encode_values)
+
+    def set_bulk_raw(self, data, no_reply=False, encode_values=True):
+        return self._protocol.set_bulk_raw(data, no_reply, encode_values)
+
     def set(self, key, value, db=None, expire_time=None, no_reply=False):
-        db = self._default_db if db is None else db
-        return self._protocol.set(key, value, db, expire_time, no_reply)
+        return self._protocol.set(key, value, db, expire_time, no_reply, True)
 
-    def remove(self, key, db=None, no_reply=False):
-        db = self._default_db if db is None else db
-        return self._protocol.remove(key, db, no_reply)
-
-    def get_bulk(self, keys, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol.get_bulk(keys, db)
-
-    def get_bulk_raw(self, keys, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol.get_bulk(keys, db, False)
-
-    def set_bulk(self, __data=None, **kwargs):
-        db = kwargs.pop('db', self._default_db)
-        expire_time = kwargs.pop('expire_time', None)
-        no_reply = kwargs.pop('no_reply', False)
-        if __data is not None:
-            if kwargs:
-                raise ValueError('unexpected arguments for set_bulk(): %s'
-                                 % ', '.join(sorted(kwargs)))
-            kwargs = __data
-        return self._protocol.set_bulk(kwargs, db, expire_time, no_reply)
+    def set_bytes(self, key, value, db=None, expire_time=None, no_reply=False):
+        return self._protocol.set(key, value, db, expire_time, no_reply, False)
 
     def remove_bulk(self, keys, db=None, no_reply=False):
-        db = self._default_db if db is None else db
         return self._protocol.remove_bulk(keys, db, no_reply)
 
-    def script(self, name, __data=None, **params):
-        encode_values = params.pop('encode_values', True)
-        if __data is not None:
-            params.update(__data)
-        return self._protocol.script(name, params, encode_values)
+    def remove_bulk_raw(self, db_key_list, no_reply=False):
+        return self._protocol.remove_bulk_raw(db_key_list, no_reply)
+
+    def remove(self, key, db=None, no_reply=False):
+        return self._protocol.remove(key, db, no_reply)
+
+    def script(self, name, data=None, no_reply=False, encode_values=True,
+               decode_values=True):
+        return self._protocol.script(name, data, no_reply, encode_values,
+                                     decode_values)
 
     def clear(self, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.clear(db)
+        return self._http.clear(db)
 
     def status(self, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.status(db)
+        return self._http.status(db)
 
     def report(self):
-        return self._protocol_http.report()
+        return self._http.report()
 
     def ulog_list(self):
-        return self._protocol_http.ulog_list()
+        return self._http.ulog_list()
 
     def ulog_remove(self, max_dt):
-        return self._protocol_http.ulog_remove(max_dt)
+        return self._http.ulog_remove(max_dt)
 
     def synchronize(self, hard=False, command=None, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.synchronize(hard, command, db)
+        return self._http.synchronize(hard, command, db)
 
     def vacuum(self, step=0, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.vacuum(step, db)
+        return self._http.vacuum(step, db)
 
-    def add(self, key, value, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.add(key, value, db, expire_time)
+    def add(self, key, value, db=None, expire_time=None, encode_value=True):
+        return self._http.add(key, value, db, expire_time, encode_value)
 
-    def replace(self, key, value, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.replace(key, value, db, expire_time)
+    def replace(self, key, value, db=None, expire_time=None,
+                encode_value=True):
+        return self._http.replace(key, value, db, expire_time, encode_value)
 
-    def append(self, key, value, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.append(key, value, db, expire_time)
+    def append(self, key, value, db=None, expire_time=None, encode_value=True):
+        return self._http.append(key, value, db, expire_time, encode_value)
 
     def exists(self, key, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.check(key, db)
+        return self._http.check(key, db)
 
-    def seize(self, key, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.seize(key, db)
+    def length(self, key, db=None):
+        return self._http.length(key, db)
 
-    def cas(self, key, old_val, new_val, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.cas(key, old_val, new_val, db, expire_time)
+    def seize(self, key, db=None, decode_value=True):
+        return self._http.seize(key, db, decode_value)
+
+    def cas(self, key, old_val, new_val, db=None, expire_time=None,
+            encode_value=True):
+        return self._http.cas(key, old_val, new_val, db, expire_time,
+                              encode_value)
 
     def incr(self, key, n=1, orig=None, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.increment(key, n, orig, db, expire_time)
+        return self._http.increment(key, n, orig, db, expire_time)
 
     def incr_double(self, key, n=1., orig=None, db=None, expire_time=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.increment_double(key, n, orig, db,
-                                                    expire_time)
+        return self._http.increment_double(key, n, orig, db, expire_time)
 
     def _kdb_from_key(self, key):
         if isinstance(key, tuple):
             if len(key) != 2:
                 raise ValueError('expected key-tuple of (key, db)')
             return key
-        return key, self._default_db
+        return (key, None)
 
     def __getitem__(self, key):
         return self.get(*self._kdb_from_key(key))
@@ -267,44 +263,44 @@ class KyotoTycoon(BaseClient):
             value, expire_time = value
         else:
             expire_time = None
-        self.set(key, value, db, expire_time)
+        self._protocol.set(key, value, db, expire_time, no_reply=True)
 
     def __delitem__(self, key):
         self.remove(*self._kdb_from_key(key))
 
+    def update(self, __data=None, **kwargs):
+        if __data is None:
+            __data = kwargs
+        elif kwargs:
+            __data.update(kwargs)
+        return self.set_bulk(__data)
+
     pop = seize
-    update = set_bulk
 
     def __contains__(self, key):
         return self.exists(*self._kdb_from_key(key))
 
     def __len__(self):
-        return int(self.status(self._default_db)['count'])
+        return int(self.status()['count'])
 
     def count(self, db=None):
-        db = self._default_db if db is None else db
         return int(self.status(db)['count'])
 
     def match_prefix(self, prefix, max_keys=None, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.match_prefix(prefix, max_keys, db)
+        return self._http.match_prefix(prefix, max_keys, db)
 
     def match_regex(self, regex, max_keys=None, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.match_regex(regex, max_keys, db)
+        return self._http.match_regex(regex, max_keys, db)
 
     def match_similar(self, origin, distance=None, max_keys=None, db=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.match_similar(origin, distance, max_keys,
-                                                 db)
+        return self._http.match_similar(origin, distance, max_keys, db)
 
     def cursor(self, db=None, cursor_id=None):
-        db = self._default_db if db is None else db
-        return self._protocol_http.cursor(cursor_id, db)
+        return self._http.cursor(cursor_id, db)
 
     def keys(self, db=None):
         cursor = self.cursor(db=db)
-        cursor.jump()
+        if not cursor.jump(): return
         while True:
             key = cursor.key()
             if key is None: return
@@ -316,7 +312,7 @@ class KyotoTycoon(BaseClient):
 
     def values(self, db=None):
         cursor = self.cursor(db=db)
-        cursor.jump()
+        if not cursor.jump(): return
         while True:
             value = cursor.value()
             if value is None: return
@@ -325,7 +321,7 @@ class KyotoTycoon(BaseClient):
 
     def items(self, db=None):
         cursor = self.cursor(db=db)
-        cursor.jump()
+        if not cursor.jump(): return
         while True:
             kv = cursor.get()
             if kv is None: return
@@ -337,15 +333,16 @@ class KyotoTycoon(BaseClient):
 
     @property
     def size(self):
-        return int(self.status(self._default_db)['size'])
+        return int(self.status()['size'])
 
     @property
     def path(self):
-        return decode(self.status(self._default_db)['path'])
+        return decode(self.status()['path'])
 
     def set_database(self, db):
+        self._default_database = db
         self._protocol.set_database(db)
-        self._protocol_http.set_database(db)
+        self._http.set_database(db)
         return self
 
 
@@ -360,37 +357,44 @@ class TokyoTyrant(BaseClient):
             timeout=self._timeout,
             connection_pool=self._connection_pool)
 
-    def get(self, key):
-        return self._protocol.get(key)
+    def get_bulk(self, keys, decode_values=True):
+        return self._protocol.mget(keys, decode_values)
 
-    def get_raw(self, key):
+    def get(self, key):
+        return self._protocol.get(key, True)
+
+    def get_bytes(self, key):
         return self._protocol.get(key, False)
 
-    def set(self, key, value):
-        return self._protocol.put(key, value)
+    def set_bulk(self, data, no_reply=False, encode_values=True):
+        if no_reply:
+            self._protocol.putnr_bulk(data, encode_values)
+        else:
+            return self._protocol.misc_putlist(data, True, encode_values)
 
-    def remove(self, key):
-        return self._protocol.out(key)
+    def set(self, key, value, no_reply=False):
+        if no_reply:
+            self._protocol.putnr(key, value, True)
+        else:
+            return self._protocol.put(key, value, True)
 
-    def get_bulk(self, keys):
-        return self._protocol.mget(keys)
-
-    def get_bulk_raw(self, keys):
-        return self._protocol.mget(keys, False)
-
-    def set_bulk(self, __data=None, **kwargs):
-        if __data is not None:
-            kwargs.update(__data)
-        return self._protocol.misc_putlist(kwargs)
+    def set_bytes(self, key, value):
+        if no_reply:
+            self._protocol.putnr(key, value, False)
+        else:
+            return self._protocol.put(key, value, False)
 
     def remove_bulk(self, keys):
         return self._protocol.misc_outlist(keys)
 
+    def remove(self, key):
+        return self._protocol.out(key)
+
     def script(self, name, key=None, value=None, lock_records=False,
-               lock_all=False, encode_value=True, decode_result=False,
+               lock_all=False, encode_value=True, decode_value=False,
                as_list=False, as_dict=False, as_int=False):
         res = self._protocol.ext(name, key, value, lock_records, lock_all,
-                                 encode_value, decode_result)
+                                 encode_value, decode_value)
         if as_list or as_dict:
             # In the event the return value is an empty string, then we just
             # return the empty container type.
@@ -414,39 +418,29 @@ class TokyoTyrant(BaseClient):
         data = self._protocol.stat()
         status = {}
         for key_value in data.decode('utf-8').splitlines():
-            key, value = key_value.split('\t', 1)
-            if value.isdigit():
-                value = int(value)
-            elif re.match('^\d+\.\d+$', value):
-                value = float(value)
-            status[key] = value
+            key, val = key_value.split('\t', 1)
+            if val.replace('.', '').isdigit():
+                try:
+                    val = float(val) if val.find('.') >= 0 else int(val)
+                except ValueError:
+                    pass
+            status[key] = val
         return status
 
-    def add(self, key, value):
-        return self._protocol.putkeep(key, value)
+    def synchronize(self):
+        return self._protocol.sync()
 
-    def append(self, key, value):
-        return self._protocol.putcat(key, value)
+    def optimize(self, options):
+        return self._protocol.optimize(options)
 
-    def addshl(self, key, value, width):
-        return self._protocol.putshl(key, value, width)
+    def add(self, key, value, encode_value=True):
+        return self._protocol.putkeep(key, value, encode_value)
 
-    def setnr(self, key, value):
-        self._protocol.putnr(key, value)
+    def append(self, key, value, encode_value=True):
+        return self._protocol.putcat(key, value, encode_value)
 
-    def setnr_bulk(self, __data=None, **kwargs):
-        if __data is not None:
-            kwargs.update(__data)
-        self._protocol.mputnr(kwargs)
-
-    def setdup(self, key, value):
-        return self._protocol.misc_putdup(key, value)
-
-    def setdupback(self, key, value):
-        return self._protocol.misc_putdupback(key, value)
-
-    def get_part(self, key, start=None, end=None):
-        return self._protocol.misc_getpart(key, start or 0, end)
+    def addshl(self, key, value, width, encode_value=True):
+        return self._protocol.putshl(key, value, width, encode_value)
 
     def exists(self, key):
         return self._protocol.vsiz(key) is not None
@@ -454,14 +448,14 @@ class TokyoTyrant(BaseClient):
     def length(self, key):
         return self._protocol.vsiz(key)
 
+    def seize(self, key, decode_value=True):
+        return self._protocol.seize(key, decode_value)
+
     def incr(self, key, n=1):
         return self._protocol.addint(key, n)
 
     def incr_double(self, key, n=1.):
         return self._protocol.adddouble(key, n)
-
-    def misc(self, cmd, args=None, update_log=True):
-        return self._protocol.misc(cmd, args, update_log)
 
     def count(self):
         return self._protocol.rnum()
@@ -472,11 +466,32 @@ class TokyoTyrant(BaseClient):
         else:
             return self.get(item)
 
-    __setitem__ = set
+    def __setitem__(self, key, value):
+        self._protocol.putnr(key, value, True)
+
     __delitem__ = remove
     __contains__ = exists
     __len__ = count
-    update = set_bulk
+    pop = seize
+
+    def update(self, __data=None, **kwargs):
+        if __data is None:
+            __data = kwargs
+        elif kwargs:
+            __data.update(kwargs)
+        return self.set_bulk(__data)
+
+    def setdup(self, key, value, encode_value=True):
+        return self._protocol.misc_putdup(key, value, True, encode_value)
+
+    def setdupback(self, key, value, encode_value=True):
+        return self._protocol.misc_putdupback(key, value, True, encode_value)
+
+    def get_part(self, key, start=None, end=None, decode_value=True):
+        return self._protocol.misc_getpart(key, start or 0, end, decode_value)
+
+    def misc(self, cmd, args=None, update_log=True, decode_values=False):
+        return self._protocol.misc(cmd, args, update_log, decode_values)
 
     @property
     def size(self):
@@ -488,12 +503,6 @@ class TokyoTyrant(BaseClient):
         if error_str is not None:
             code, msg = error_str.split(': ', 1)
             return int(code), msg
-
-    def optimize(self, options):
-        return self._protocol.optimize(options)
-
-    def synchronize(self):
-        return self._protocol.sync()
 
     def copy(self, path):
         return self._protocol.copy(path)
@@ -519,25 +528,24 @@ class TokyoTyrant(BaseClient):
     def defragment(self, nsteps=None):
         return self._protocol.misc_defragment(nsteps)
 
-    def get_range(self, start, stop=None, max_keys=0):
-        return self._protocol.misc_range(start, stop, max_keys)
+    def get_range(self, start, stop=None, max_keys=0, decode_values=True):
+        return self._protocol.misc_range(start, stop, max_keys, decode_values)
 
-    def match_prefix(self, prefix, max_keys=1024):
+    def get_rangelist(self, start, stop=None, max_keys=0, decode_values=True):
+        return self._protocol.misc_rangelist(start, stop, max_keys,
+                                             decode_values)
+
+    def match_prefix(self, prefix, max_keys=None):
         return self._protocol.fwmkeys(prefix, max_keys)
 
-    def match_regex(self, regex, max_keys=1024):
-        return self._protocol.misc_regex(regex, max_keys)
+    def match_regex(self, regex, max_keys=None, decode_values=True):
+        return self._protocol.misc_regex(regex, max_keys, decode_values)
+
+    def match_regexlist(self, regex, max_keys=None, decode_values=True):
+        return self._protocol.misc_regexlist(regex, max_keys, decode_values)
 
     def iter_from(self, start_key):
-        self._protocol.misc_iterinit(start_key)
-        accum = {}
-        while True:
-            kv = self._protocol.misc_iternext()
-            if kv:
-                accum[kv[0]] = kv[1]
-            else:
-                break
-        return accum
+        return self._protocol.items(start_key)
 
     def keys(self):
         return self._protocol.keys()
