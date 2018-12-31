@@ -313,7 +313,7 @@ class HttpProtocol(object):
 
         resp, status = self.request('/set_bulk', accum, db, atomic=atomic,
                                     decode_keys=False)
-        return int(resp['num'])
+        return int(resp[b'num'])
 
     def remove_bulk(self, keys, db=None, atomic=True):
         resp, status = self.request('/remove_bulk', keys, db, atomic=atomic,
