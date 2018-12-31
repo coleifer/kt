@@ -35,14 +35,14 @@ def do_set_http(nrows, klen, vlen):
     kfmt = '%%0%sd' % klen
     vfmt = '%%0%sd' % vlen
     for i in range(nrows):
-        db._protocol_http.set(kfmt % i, vfmt % i)
+        db._http.set(kfmt % i, vfmt % i)
 
 def do_set_bulk_http(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
     vfmt = '%%0%sd' % vlen
     for i in range(0, nrows, chunksize):
         accum = {kfmt % j: vfmt % j for j in range(i, i + chunksize)}
-        db._protocol_http.set_bulk(accum)
+        db._http.set_bulk(accum)
 
 @contextlib.contextmanager
 def timed(msg, *params):

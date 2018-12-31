@@ -30,7 +30,7 @@ def do_set_bulk_http(nrows, chunksize, klen, vlen):
     vfmt = '%%0%sd' % vlen
     for i in range(0, nrows, chunksize):
         accum = {kfmt % j: vfmt % j for j in range(i, i + chunksize)}
-        db._protocol_http.set_bulk(accum)
+        db._http.set_bulk(accum)
 
 def do_get_bulk(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
@@ -42,7 +42,7 @@ def do_get_bulk_http(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
     for i in range(0, nrows, chunksize):
         accum = [kfmt % j for j in range(i, i + chunksize)]
-        db._protocol_http.get_bulk(accum)
+        db._http.get_bulk(accum)
 
 def do_remove_bulk(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
@@ -54,7 +54,7 @@ def do_remove_bulk_http(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
     for i in range(0, nrows, chunksize):
         accum = [kfmt % j for j in range(i, i + chunksize)]
-        db._protocol_http.remove_bulk(accum)
+        db._http.remove_bulk(accum)
 
 @contextlib.contextmanager
 def timed(msg, *params):
