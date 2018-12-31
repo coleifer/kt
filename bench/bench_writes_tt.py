@@ -35,14 +35,14 @@ def do_setnr(nrows, klen, vlen):
     kfmt = '%%0%sd' % klen
     vfmt = '%%0%sd' % vlen
     for i in range(nrows):
-        db.setnr(kfmt % i, vfmt % i)
+        db.set(kfmt % i, vfmt % i, no_reply=True)
 
 def do_setnr_bulk(nrows, chunksize, klen, vlen):
     kfmt = '%%0%sd' % klen
     vfmt = '%%0%sd' % vlen
     for i in range(0, nrows, chunksize):
         accum = {kfmt % j: vfmt % j for j in range(i, i + chunksize)}
-        db.setnr_bulk(accum)
+        db.set_bulk(accum, no_reply=True)
 
 @contextlib.contextmanager
 def timed(msg, *params):
