@@ -48,10 +48,7 @@ class HttpProtocol(object):
         self._host = host
         self._port = port
         self._timeout = timeout
-        if decode_keys:
-            self.decode_key = decode
-        else:
-            self.decode_key = noop_decode
+        self._decode_keys = decode_keys
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
         self.default_db = default_db or 0
@@ -91,7 +88,9 @@ class HttpProtocol(object):
             accum.append(b'%s\t' % b64encode(b'_' + encode(key)))
         return b'\n'.join(accum)
 
-    def _decode_response(self, tsv, content_type):
+    def _decode_response(self, tsv, content_type, decode_keys=None):
+        if decode_keys is None:
+            decode_keys = self._decode_keys
         decoder = decode_from_content_type(content_type)
         accum = {}
         for line in tsv.split(b'\n'):
@@ -103,7 +102,9 @@ class HttpProtocol(object):
             if decoder is not None:
                 key, value = decoder(key), decoder(value)
 
-            accum[self.decode_key(key)] = value
+            if decode_keys:
+                key = decode(key)
+            accum[key] = value
 
         return accum
 
@@ -111,7 +112,8 @@ class HttpProtocol(object):
         self._conn.request('POST', self._prefix + path, body, self._headers)
         return self._conn.getresponse()
 
-    def request(self, path, data, db=None, allowed_status=None, atomic=False):
+    def request(self, path, data, db=None, allowed_status=None, atomic=False,
+                decode_keys=None):
         if isinstance(data, dict):
             body = self._encode_keys_values(data)
         elif isinstance(data, list):
@@ -132,7 +134,7 @@ class HttpProtocol(object):
             else:
                 body = db_data
 
-        r = self._post(path, body, db)
+        r = self._post(path, body)
         content = r.read()
         content_type = r.getheader('content-type')
         status = r.status
@@ -141,19 +143,20 @@ class HttpProtocol(object):
             if allowed_status is None or status not in allowed_status:
                 raise ProtocolError('protocol error [%s]' % status)
 
-        return (self._decode_response(content, content_type), status)
+        data = self._decode_response(content, content_type, decode_keys)
+        return data, status
 
     def report(self):
         resp, status = self.request('/report', {}, None)
         return resp
 
-    def script(self, name, __data=None, **params):
-        if __data is not None:
-            params.update(__data)
-
+    def script(self, name, data=None, encode_values=True, decode_values=True):
         accum = {}
-        for key, value in params.items():
-            accum['_%s' % key] = self.encode_value(value)
+        if data is not None:
+            for key, value in data.items():
+                if encode_values:
+                    value = self.encode_value(value)
+                accum['_%s' % key] = value
 
         resp, status = self.request('/play_script', accum, False, (450,))
         if status == 450:
@@ -161,7 +164,9 @@ class HttpProtocol(object):
 
         accum = {}
         for key, value in resp.items():
-            accum[key[1:]] = self.decode_value(value)
+            if decode_values:
+                value = self.decode_value(value)
+            accum[key[1:]] = value
         return accum
 
     def tune_replication(self, host=None, port=None, timestamp=None,
@@ -179,7 +184,7 @@ class HttpProtocol(object):
         return status == 200
 
     def status(self, db=None):
-        resp, status = self.request('/status', {}, db)
+        resp, status = self.request('/status', {}, db, decode_keys=True)
         return resp
 
     def clear(self, db=None):
@@ -195,24 +200,32 @@ class HttpProtocol(object):
         _, status = self.request('/synchronize', data, db)
         return status == 200
 
-    def _simple_write(self, cmd, key, value, db=None, expire_time=None):
-        data = {'key': key, 'value': self.encode_value(value)}
+    def _simple_write(self, cmd, key, value, db=None, expire_time=None,
+                      encode_value=True):
+        if encode_value:
+            value = self.encode_value(value)
+        data = {'key': key, 'value': value}
         if expire_time is not None:
             data['xt'] = str(expire_time)
         resp, status = self.request('/%s' % cmd, data, db, (450,))
         return status != 450
 
-    def set(self, key, value, db=None, expire_time=None):
-        return self._simple_write('set', key, value, db, expire_time)
+    def set(self, key, value, db=None, expire_time=None, encode_value=True):
+        return self._simple_write('set', key, value, db, expire_time,
+                                  encode_value)
 
-    def add(self, key, value, db=None, expire_time=None):
-        return self._simple_write('add', key, value, db, expire_time)
+    def add(self, key, value, db=None, expire_time=None, encode_value=True):
+        return self._simple_write('add', key, value, db, expire_time,
+                                  encode_value)
 
-    def replace(self, key, value, db=None, expire_time=None):
-        return self._simple_write('replace', key, value, db, expire_time)
+    def replace(self, key, value, db=None, expire_time=None,
+                encode_value=True):
+        return self._simple_write('replace', key, value, db, expire_time,
+                                  encode_value)
 
-    def append(self, key, value, db=None, expire_time=None):
-        return self._simple_write('append', key, value, db, expire_time)
+    def append(self, key, value, db=None, expire_time=None, encode_value=True):
+        return self._simple_write('append', key, value, db, expire_time,
+                                  encode_value)
 
     def increment(self, key, n=1, orig=None, db=None, expire_time=None):
         data = {'key': key, 'num': str(n)}
@@ -220,8 +233,8 @@ class HttpProtocol(object):
             data['orig'] = str(orig)
         if expire_time is not None:
             data['xt'] = str(expire_time)
-        resp, status = self.request('/increment', data, db)
-        return int(resp['num'])
+        resp, status = self.request('/increment', data, db, decode_keys=False)
+        return int(resp[b'num'])
 
     def increment_double(self, key, n=1, orig=None, db=None, expire_time=None):
         data = {'key': key, 'num': str(n)}
@@ -229,18 +242,24 @@ class HttpProtocol(object):
             data['orig'] = str(orig)
         if expire_time is not None:
             data['xt'] = str(expire_time)
-        resp, status = self.request('/increment_double', data, db)
-        return float(resp['num'])
+        resp, status = self.request('/increment_double', data, db,
+                                    decode_keys=False)
+        return float(resp[b'num'])
 
-    def cas(self, key, old_val, new_val, db=None, expire_time=None):
+    def cas(self, key, old_val, new_val, db=None, expire_time=None,
+            encode_value=True):
         if old_val is None and new_val is None:
             raise ValueError('old value and/or new value must be specified.')
 
         data = {'key': key}
         if old_val is not None:
-            data['oval'] = self.encode_value(old_val)
+            if encode_value:
+                old_val = self.encode_value(old_val)
+            data['oval'] = old_val
         if new_val is not None:
-            data['nval'] = self.encode_value(new_val)
+            if encode_value:
+                new_val = self.encode_value(new_val)
+            data['nval'] = new_val
         if expire_time is not None:
             data['xt'] = str(expire_time)
 
@@ -251,54 +270,68 @@ class HttpProtocol(object):
         resp, status = self.request('/remove', {'key': key}, db, (450,))
         return status != 450
 
-    def get(self, key, db=None):
-        resp, status = self.request('/get', {'key': key}, db, (450,))
+    def get(self, key, db=None, decode_value=True):
+        resp, status = self.request('/get', {'key': key}, db, (450,),
+                                    decode_keys=False)
         if status == 450:
             return
-        value = resp[self.decode_key(b'value')]
-        return self.decode_value(value)
+        value = resp[b'value']
+        if decode_value:
+            value = self.decode_value(value)
+        return value
 
     def check(self, key, db=None):
         resp, status = self.request('/check', {'key': key}, db, (450,))
         return status != 450
 
-    def seize(self, key, db=None):
-        resp, status = self.request('/seize', {'key': key}, db, (450,))
+    def seize(self, key, db=None, decode_value=True):
+        resp, status = self.request('/seize', {'key': key}, db, (450,),
+                                    decode_keys=False)
         if status == 450:
             return
-        value = resp[self.decode_key(b'value')]
-        return self.decode_value(value)
+        value = resp[b'value']
+        if decode_value:
+            value = self.decode_value(value)
+        return value
 
-    def set_bulk(self, data, db=0, expire_time=None, atomic=True):
+    def set_bulk(self, data, db=None, expire_time=None, atomic=True,
+                 encode_values=True):
         accum = {}
         if expire_time is not None:
             accum['xt'] = str(expire_time)
 
         # Keys must be prefixed by "_".
         for key, value in data.items():
-            accum['_%s' % key] = self.encode_value(value)
+            if encode_values:
+                value = self.encode_value(value)
+            accum['_%s' % key] = value
 
-        resp, status = self.request('/set_bulk', accum, db, atomic=atomic)
-        return int(resp.pop(self.decode_key(b'num')))
+        resp, status = self.request('/set_bulk', accum, db, atomic=atomic,
+                                    decode_keys=False)
+        return int(resp['num'])
 
     def remove_bulk(self, keys, db=None, atomic=True):
-        resp, status = self.request('/remove_bulk', keys, db, atomic=atomic)
-        return int(resp.pop(self.decode_key(b'num')))
+        resp, status = self.request('/remove_bulk', keys, db, atomic=atomic,
+                                    decode_keys=False)
+        return int(resp[b'num'])
 
-    def _do_bulk_command(self, cmd, params, db=None, **kwargs):
-        resp, status = self.request(cmd, params, db, **kwargs)
+    def _do_bulk_command(self, cmd, params, db=None, decode_values=True, **kw):
+        resp, status = self.request(cmd, params, db, **kw)
 
-        n = resp.pop(self.decode_key(b'num'))
+        n = resp.pop('num' if self._decode_keys else b'num')
         if n == b'0':
             return {}
 
         accum = {}
         for key, value in resp.items():
-            accum[key[1:]] = self.decode_value(value)
+            if decode_values:
+                value = self.decode_value(value)
+            accum[key[1:]] = value
         return accum
 
-    def get_bulk(self, keys, db=None, atomic=True):
-        return self._do_bulk_command('/get_bulk', keys, db, atomic=atomic)
+    def get_bulk(self, keys, db=None, atomic=True, decode_values=True):
+        return self._do_bulk_command('/get_bulk', keys, db, atomic=atomic,
+                                     decode_values=decode_values)
 
     def vacuum(self, step=0, db=None):
         # If step > 0, the whole region is scanned.
@@ -307,7 +340,7 @@ class HttpProtocol(object):
         return status == 200
 
     def _do_bulk_sorted_command(self, cmd, params, db=None):
-        results = self._do_bulk_command(cmd, params, db)
+        results = self._do_bulk_command(cmd, params, db, decode_values=False)
         return sorted(results, key=lambda k: int(results[k]))
 
     def match_prefix(self, prefix, max_keys=None, db=None):
@@ -332,7 +365,8 @@ class HttpProtocol(object):
 
     def _cursor_command(self, cmd, cursor_id, data, db=None):
         data['CUR'] = cursor_id
-        resp, status = self.request('/%s' % cmd, data, db, (450, 501))
+        resp, status = self.request('/%s' % cmd, data, db, (450, 501),
+                                    decode_keys=False)
         if status == 501:
             raise NotImplementedError('%s is not supported' % cmd)
         return resp, status
@@ -355,8 +389,11 @@ class HttpProtocol(object):
         resp, status = self._cursor_command('cur_step_back', cursor_id, {})
         return status == 200
 
-    def cur_set_value(self, cursor_id, value, step=False, expire_time=None):
-        data = {'value': self.encode_value(value)}
+    def cur_set_value(self, cursor_id, value, step=False, expire_time=None,
+                      encode_value=True):
+        if encode_values:
+            value = self.encode_value(value)
+        data = {'value': value}
         if expire_time is not None:
             data['xt'] = str(expire_time)
         if step:
@@ -373,30 +410,44 @@ class HttpProtocol(object):
         resp, status = self._cursor_command('cur_get_key', cursor_id, data)
         if status == 450:
             return
-        return self.decode_key(resp[self.decode_key(b'key')])
+        key = resp[b'key']
+        if self._decode_keys:
+            key = decode(key)
+        return key
 
-    def cur_get_value(self, cursor_id, step=False):
+    def cur_get_value(self, cursor_id, step=False, decode_value=True):
         data = {'step': ''} if step else {}
         resp, status = self._cursor_command('cur_get_value', cursor_id, data)
         if status == 450:
             return
-        return self.decode_value(resp[self.decode_key(b'value')])
+        value = resp[b'value']
+        if decode_value:
+            value = self.decode_value(value)
+        return value
 
-    def cur_get(self, cursor_id, step=False):
+    def cur_get(self, cursor_id, step=False, decode_value=True):
         data = {'step': ''} if step else {}
         resp, status = self._cursor_command('cur_get', cursor_id, data)
         if status == 450:
             return
-        key = self.decode_key(resp[self.decode_key(b'key')])
-        value = self.decode_key(resp[self.decode_key(b'value')])
+        key = resp[b'key']
+        if self._decode_keys:
+            key = decode(key)
+        value = resp[b'value']
+        if decode_value:
+            value = self.decode_value(value)
         return (key, value)
 
-    def cur_seize(self, cursor_id, step=False):
+    def cur_seize(self, cursor_id, step=False, decode_value=True):
         resp, status = self._cursor_command('cur_seize', cursor_id, {})
         if status == 450:
             return
-        key = self.decode_key(resp[self.decode_key(b'key')])
-        value = self.decode_key(resp[self.decode_key(b'value')])
+        key = resp[b'key']
+        if self._decode_keys:
+            key = decode(key)
+        value = resp[b'value']
+        if decode_value:
+            value = self.decode_value(value)
         return (key, value)
 
     def cur_delete(self, cursor_id):
@@ -410,7 +461,7 @@ class HttpProtocol(object):
         return Cursor(self, cursor_id, db)
 
     def ulog_list(self):
-        resp, status = self.request('/ulog_list', {}, None)
+        resp, status = self.request('/ulog_list', {}, None, decode_keys=True)
         log_list = []
         for filename, meta in resp.items():
             size, ts_str = meta.decode('utf-8').split(':')

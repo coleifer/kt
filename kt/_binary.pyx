@@ -354,7 +354,7 @@ cdef class RequestBuffer(object):
     cdef RequestBuffer write_db_key_list(self, data):
         # [(db0, k0), (db1, k1)...]
         cdef bytes bkey
-        self.write_int(len(keys))
+        self.write_int(len(data))
         for db, key in data:
             bkey = _encode(key)
             self.buf.write(struct_hi.pack(db, len(bkey)))
@@ -753,8 +753,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         :param bint decode_value: deserialize values after reading
         :return: a dict of key, value for matching records
         """
-        cdef KTResponseHandler = self._get_bulk(keys, db, True)
-        return response.read_keys_values_with_db_expire_dict(decode_value)
+        cdef KTResponseHandler resp = self._get_bulk(keys, db, True)
+        return resp.read_keys_values_with_db_expire_dict(decode_value)
 
     def get_bulk_details(self, keys, db=None, decode_value=True):
         """
@@ -765,8 +765,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         :param bint decode_value: deserialize values after reading
         :return: a list of (db, key, value, expire_time) tuples.
         """
-        cdef KTResponseHandler = self._get_bulk(keys, db, True)
-        return response.read_keys_values_with_db_expire(decode_value)
+        cdef KTResponseHandler resp = self._get_bulk(keys, db, True)
+        return resp.read_keys_values_with_db_expire(decode_value)
 
     def get_bulk_raw(self, db_key_list, decode_value=True):
         """
@@ -777,8 +777,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         :param bint decode_value: deserialize values after reading
         :return: a dict of key, value for matching records
         """
-        cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
-        return response.read_keys_values_with_db_expire_dict(decode_value)
+        cdef KTResponseHandler resp = self._get_bulk(db_key_list, None, False)
+        return resp.read_keys_values_with_db_expire_dict(decode_value)
 
     def get_bulk_raw_details(self, db_key_list, decode_value=True):
         """
@@ -789,8 +789,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         :param bint decode_value: decode values
         :return: a list of (db, key, value, expire_time) tuples.
         """
-        cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
-        return response.read_keys_values_with_db_expire(decode_value)
+        cdef KTResponseHandler resp = self._get_bulk(db_key_list, None, False)
+        return resp.read_keys_values_with_db_expire(decode_value)
 
     def get(self, key, db=None, decode_value=True):
         """
@@ -953,7 +953,7 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         data = data or {}
         (request
          .write_magic(KT_PLAY_SCRIPT)
-         .write_bytes(struct_iii.pack(flags, len(bname), len(data)))
+         .write_bytes(struct_iii.pack(flags, len(bname), len(data)), False)
          .write_bytes(bname, False))
 
         for key in data:
@@ -988,7 +988,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if self._state.conn is None:
             self.connect()
         return TTResponseHandler(
-            <_Socket(self._state.conn),
+            <_Socket>(self._state.conn),
             self._decode_keys,
             self.decode_value)
 
@@ -1283,9 +1283,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             args = ()
 
         pfx = struct_2siii.pack(b'\xc8\x90', len(bprocname), opts, len(args))
-        request.write_bytes(pfx, False).write_bytes(bprocname, False))
+        request.write_bytes(pfx, False).write_bytes(bprocname, False)
         for arg in args:
-            request.write_bytes(_encode(arg))
+            request.write_bytes(_encode(arg), True)
 
         request.send()
         response = self.response()
@@ -1370,7 +1370,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 
         cdef:
             dict accum = {}
-            int i = 0, l = len(items)
+            int i = 0, l = len(data)
 
         while i < l:
             key = data[i]
@@ -1384,7 +1384,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return accum
 
     def misc_getlist(self, keys, decode_values=True):
-        ok, data = self._misc_key_list('getlist', keys, update_log, False)
+        ok, data = self._misc_key_list('getlist', keys, False, False)
         return self._misc_list_to_dict(data, decode_values)
 
     def misc_getpart(self, key, start=0, length=None, decode_value=True):
