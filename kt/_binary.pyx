@@ -642,16 +642,30 @@ cdef class BinaryProtocol(object):
 
 
 cdef class KTBinaryProtocol(BinaryProtocol):
+    cdef:
+        public int default_db
+
+    def __init__(self, *args, **kwargs):
+        self.default_db = kwargs.pop('default_db', 0) or 0
+        super(KTBinaryProtocol, self).__init__(*args, **kwargs)
+
+    def set_database(self, db):
+        self.default_db = db
+        return db
+
     cdef KTResponseHandler response(self):
         return KTResponseHandler(
             self._connection(),
             self._decode_keys,
             self.decode_value)
 
-    def get_bulk(self, keys, db, decode_value=True):
+    def get_bulk(self, keys, db=None, decode_value=True):
         cdef:
             RequestBuffer request = self.request()
             KTResponseHandler response
+
+        if db is None:
+            db = self.default_db
 
         if not isinstance(keys, (list, tuple, set)):
             keys = (keys,)
@@ -666,8 +680,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         response.check_error(KT_GET_BULK)
         return response.read_keys_values_with_db_expire(decode_value)
 
-    def get(self, key, db, decode_value=True):
-        cdef bytes bkey = encode(key)
+    def get(self, key, db=None, decode_value=True):
+        cdef bytes bkey = _encode(key)
         result = self.get_bulk((bkey,), db, decode_value)
         return result.get(_decode(bkey) if self._decode_keys else bkey)
 
@@ -1291,9 +1305,9 @@ cdef class TTBinaryProtocol(BinaryProtocol):
 def dict_to_table(dict d):
     buf = io.BytesIO()
     for key, value in d.items():
-        buf.write(encode(key))
+        buf.write(_encode(key))
         buf.write(b'\x00')
-        buf.write(encode(value))
+        buf.write(_encode(value))
         buf.write(b'\x00')
     return buf.getvalue()
 
