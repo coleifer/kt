@@ -285,6 +285,7 @@ struct_h = struct.Struct('>H')
 struct_hi = struct.Struct('>HI')
 struct_i = struct.Struct('>I')
 struct_ii = struct.Struct('>II')
+struct_iii = struct.Struct('>III')
 struct_l = struct.Struct('>q')
 struct_q = struct.Struct('>Q')
 struct_qq = struct.Struct('>QQ')
@@ -426,6 +427,9 @@ cdef class RequestBuffer(object):
         self.buf.write(bval)
         return self
 
+    cdef send_simple(self, data):
+        self._socket.send(data)
+
     cdef send(self):
         self._socket.send(self.buf.getvalue())
         self.buf = io.BytesIO()
@@ -489,6 +493,20 @@ cdef class BaseResponseHandler(object):
         else:
             for i in range(n):
                 accum.append(self.read_bytes())
+
+        return accum
+
+    cdef list read_values(self, decode_values):
+        cdef:
+            int i
+            int n = self.read_int()
+            list accum = []
+
+        for i in range(n):
+            value = self.read_bytes()
+            if decode_values:
+                value = self.value_decode(value)
+            accum.append(value)
 
         return accum
 
@@ -683,9 +701,9 @@ cdef class BinaryProtocol(object):
         return _deserialize_dict(data, decode_values)
 
     cdef RequestBuffer request(self):
-        return RequestBuffer(
-            self._connection(),
-            self.encode_value)
+        if self._state.conn is None:
+            self.connect()
+        return RequestBuffer(<_Socket>(self._state.conn), self.encode_value)
 
 
 cdef class KTBinaryProtocol(BinaryProtocol):
@@ -698,11 +716,12 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
     def set_database(self, db):
         self.default_db = db
-        return db
 
     cdef KTResponseHandler response(self):
+        if self._state.conn is None:
+            self.connect()
         return KTResponseHandler(
-            self._connection(),
+            <_Socket>(self._state.conn),
             self._decode_keys,
             self.decode_value)
 
@@ -713,9 +732,6 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
         if db is None:
             db = self.default_db
-
-        if not isinstance(keys, (list, tuple, set)):
-            keys = (keys,)
 
         request.write_magic(KT_GET_BULK).write_int(0)
         if flat:
@@ -729,27 +745,62 @@ cdef class KTBinaryProtocol(BinaryProtocol):
         return response
 
     def get_bulk(self, keys, db=None, decode_value=True):
-        # Accepts flat list of keys and a db index, returns a dict of k->v.
+        """
+        Get multiple key/value pairs in a single request.
+
+        :param list keys: a flat list of keys
+        :param int db: db index
+        :param bint decode_value: deserialize values after reading
+        :return: a dict of key, value for matching records
+        """
         cdef KTResponseHandler = self._get_bulk(keys, db, True)
         return response.read_keys_values_with_db_expire_dict(decode_value)
 
     def get_bulk_details(self, keys, db=None, decode_value=True):
-        # Accepts flat list of keys and a db index, returns a list of
-        # (db, key, value, xt) tuples.
+        """
+        Get multiple key/value pairs in a single request.
+
+        :param list keys: a flat list of keys
+        :param int db: db index
+        :param bint decode_value: deserialize values after reading
+        :return: a list of (db, key, value, expire_time) tuples.
+        """
         cdef KTResponseHandler = self._get_bulk(keys, db, True)
         return response.read_keys_values_with_db_expire(decode_value)
 
     def get_bulk_raw(self, db_key_list, decode_value=True):
-        # Accepts list of (db, key) tuples, returns a dict of k->v.
+        """
+        Get multiple key/value pairs in a single request.
+
+        :param list db_key_list: a list of (db, key) tuples
+        :param int db: db index
+        :param bint decode_value: deserialize values after reading
+        :return: a dict of key, value for matching records
+        """
         cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
         return response.read_keys_values_with_db_expire_dict(decode_value)
 
     def get_bulk_raw_details(self, db_key_list, decode_value=True):
-        # Accepts list of (db, key) tuples, returns a list of (db, k, v, xt).
+        """
+        Get multiple key/value pairs in a single request.
+
+        :param list db_key_list: a list of (db, key) tuples
+        :param int db: db index
+        :param bint decode_value: decode values
+        :return: a list of (db, key, value, expire_time) tuples.
+        """
         cdef KTResponseHandler = self._get_bulk(db_key_list, None, False)
         return response.read_keys_values_with_db_expire(decode_value)
 
     def get(self, key, db=None, decode_value=True):
+        """
+        Get the value associated with the given key.
+
+        :param key: key to retrieve
+        :param int db: db index
+        :param bint decode_value: deserialize values after reading
+        :return: value or None if not found
+        """
         result = self.get_bulk_details((key,), db, decode_value)
         if result:
             return result[0][2]  # [(db, key, VALUE, xt)].
@@ -785,14 +836,43 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
     def set_bulk(self, data, db, expire_time, no_reply=False,
                  encode_values=True):
+        """
+        Set multiple key, value pairs in a single request.
+
+        :param dict data: mapping of key to value
+        :param int db: db index
+        :param long expire_time: expire time in seconds from now
+        :param bint no_reply: ignore reply
+        :param bint encode_values: serialize values before writing
+        :return: number of records written
+        """
         return self._set_bulk(data, db, expire_time, no_reply, encode_values,
                               True)
 
     def set_bulk_raw(self, data, no_reply, encode_values):
+        """
+        Set multiple key, value pairs in a single request.
+
+        :param list data: a list of (db, key, value, expire_time) tuples
+        :param bint no_reply: ignore reply
+        :param bint encode_values: serialize values before writing
+        :return: number of records written
+        """
         return self._set_bulk(data, None, None, no_reply, encode_values, False)
 
     def set(self, key, value, db, expire_time, no_reply=False,
             encode_value=True):
+        """
+        Store value at the given key.
+
+        :param key: key to write
+        :param value: data to store at key
+        :param int db: db index
+        :param long expire_time: expire time in seconds from now
+        :param bint no_reply: ignore reply
+        :param bint encode_value: serialize value before writing
+        :return: number of records written (1)
+        """
         return self._set_bulk({key: value}, db, expire_time, no_reply,
                               encode_value, True)
 
@@ -802,8 +882,8 @@ cdef class KTBinaryProtocol(BinaryProtocol):
             KTResponseHandler response
             int flags = KT_NOREPLY if no_reply else 0
 
-        if not isinstance(keys, (list, tuple, set)):
-            keys = (keys,)
+        if db is None:
+            db = self.default_db
 
         request.write_magic(KT_REMOVE_BULK).write_int(flags)
         if flat:
@@ -820,26 +900,60 @@ cdef class KTBinaryProtocol(BinaryProtocol):
             return response.read_int()
 
     def remove_bulk(self, keys, db, no_reply=False):
+        """
+        Remove multiple keys in a single request.
+
+        :param list keys: list of keys
+        :param int db: db index
+        :param bint no_reply: ignore reply
+        :return: number of records removed
+        """
         return self._remove_bulk(keys, db, no_reply, True)
 
     def remove_bulk_raw(self, db_key_list, no_reply=False):
+        """
+        Remove multiple keys in a single request.
+
+        :param list db_key_list: list of (db, key) tuples
+        :param bint no_reply: ignore reply
+        :return: number of records removed
+        """
         return self._remove_bulk(db_key_list, None, no_reply, False)
 
     def remove(self, key, db, no_reply=False):
+        """
+        Remove a single key from the database.
+
+        :param key: key to remove
+        :param int db: db index
+        :param bint no_reply: ignore reply
+        :return: number of records removed
+        """
         return self._remove_bulk((key,), db, no_reply, True)
 
-    # XXX: here
-    def script(self, name, data=None, encode_values=True):
+    def script(self, name, data=None, no_reply=False, encode_values=True,
+               decode_values=True):
+        """
+        Evaluate a lua script.
+
+        :param name: script function name
+        :param dict data: dictionary of key, value pairs, passed as arguments
+        :param bint no_reply: ignore reply
+        :param bint encode_values: serialize values before sending to db
+        :param bint decode_values: deserialize values after reading result
+        :return: dictionary of key, value pairs returned by function
+        """
         cdef:
             bytes bname = _encode(name)
             bytes bkey, bval
+            int flags = KT_NOREPLY if no_reply else 0
             RequestBuffer request = self.request()
             KTResponseHandler response
 
         data = data or {}
         (request
          .write_magic(KT_PLAY_SCRIPT)
-         .write_ints((0, len(bname), len(data)))
+         .write_bytes(struct_iii.pack(flags, len(bname), len(data)))
          .write_bytes(bname, False))
 
         for key in data:
@@ -855,88 +969,112 @@ cdef class KTBinaryProtocol(BinaryProtocol):
 
         request.send()
 
+        if flags & KT_NOREPLY:
+            return
+
         response = self.response()
         response.check_error(KT_PLAY_SCRIPT)
+        return response.read_keys_values_dict(decode_values)
 
-        return response.read_keys_values_dict(encode_values)
+
+struct_2si = struct.Struct('>2sI')
+struct_2sii = struct.Struct('>2sII')
+struct_2siii = struct.Struct('>2sIII')
+struct_2siiii = struct.Struct('>2sIIII')
 
 
 cdef class TTBinaryProtocol(BinaryProtocol):
     cdef TTResponseHandler response(self):
+        if self._state.conn is None:
+            self.connect()
         return TTResponseHandler(
-            self._connection(),
+            <_Socket(self._state.conn),
             self._decode_keys,
             self.decode_value)
 
-    cdef _key_value_cmd(self, key, value, bytes bmagic):
-        cdef RequestBuffer request = self.request()
-
-        (request
-         .write_magic(bmagic)
-         .write_key_value(key, value, True)
-         .send())
-
-        return self.response().check_error()
-
-    def put(self, key, value):
-        return self._key_value_cmd(key, value, b'\xc8\x10') == 0
-
-    def putkeep(self, key, value):
-        return self._key_value_cmd(key, value, b'\xc8\x11') == 0
-
-    def putcat(self, key, value):
-        return self._key_value_cmd(key, value, b'\xc8\x12') == 0
-
-    def putshl(self, key, value, width):
+    cdef _key_value_cmd(self, key, value, bytes bmagic, encode_value):
         cdef:
-            bytes bkey = _encode(key)
-            bytes bval = self.encode_value(value)
+            bytes bkey, bval
             RequestBuffer request = self.request()
 
-        (request
-         .write_magic(b'\xc8\x13')
-         .write_ints((len(bkey), len(bval), width))
-         .write_bytes(bkey, False)
-         .write_bytes(bval, False)
-         .send())
+        bkey = _encode(key)
+        if encode_value:
+            bval = self.encode_value(value)
+        else:
+            bval = _encode(value)
 
+        request.send_simple(struct_2sii.pack(bmagic, len(bkey), len(bval)) +
+                            bkey + bval)
+        return self.response().check_error()
+
+    def put(self, key, value, encode_value=True):
+        return self._key_value_cmd(key, value, b'\xc8\x10', encode_value) == 0
+
+    def putkeep(self, key, value, encode_value=True):
+        return self._key_value_cmd(key, value, b'\xc8\x11', encode_value) == 0
+
+    def putcat(self, key, value, encode_value=True):
+        return self._key_value_cmd(key, value, b'\xc8\x12', encode_value) == 0
+
+    def putshl(self, key, value, width, encode_value=True):
+        cdef:
+            bytes bkey = _encode(key)
+            bytes bval
+            RequestBuffer request = self.request()
+
+        if encode_value:
+            bval = self.encode_value(value)
+        else:
+            bval = _encode(value)
+
+        request.send_simple(
+            struct_2siii.pack(b'\xc8\x13', len(bkey), len(bval), width) +
+            bkey + bval)
         return self.response().check_error() == 0
 
-    def putnr(self, key, value):
-        cdef RequestBuffer request = self.request()
+    def putnr(self, key, value, encode_value=True):
+        cdef:
+            bytes bkey = _encode(key)
+            bytes bval
+            RequestBuffer request = self.request()
 
-        (request
-         .write_magic(b'\xc8\x18')
-         .write_key_value(key, value, True)
-         .send())
+        if encode_value:
+            bval = self.encode_value(value)
+        else:
+            bval = _encode(value)
 
-    def mputnr(self, data):
+        request.send_simple(struct_2sii.pack(b'\xc8\x18', len(bkey), len(bval))
+                            + bkey + bval)
+
+    def putnr_bulk(self, data, encode_values=True):
         cdef RequestBuffer request = self.request()
         for key, value in data.items():
             (request
              .write_magic(b'\xc8\x18')
-             .write_key_value(key, value, True)
-             .send())
+             .write_key_value(key, value, encode_values))
+        request.send()
+
+    cdef _simple_key_command(self, bytes bmagic, key):
+        cdef:
+            bytes bkey = _encode(key)
+            RequestBuffer request = self.request()
+        request.send_simple(struct_2si.pack(bmagic, len(bkey)) + bkey)
 
     def out(self, key):
-        cdef RequestBuffer request = self.request()
-
-        (request
-         .write_magic(b'\xc8\x20')
-         .write_key(key)
-         .send())
+        self._simple_key_command(b'\xc8\x20', key)
         return 0 if self.response().check_error() else 1
 
     def get(self, key, decode_value=True):
-        cdef:
-            RequestBuffer request = self.request()
-            TTResponseHandler response
+        cdef TTResponseHandler response
 
-        request.write_magic(b'\xc8\x30').write_key(key).send()
+        self._simple_key_command(b'\xc8\x30', key)
         response = self.response()
         if not response.check_error():
-            return (response.read_value()
-                    if decode_value else response.read_bytes())
+            bdata = response.read_bytes()
+            if decode_value:
+                return self.decode_value(bdata)
+            else:
+                return bdata
 
     def mget(self, keys, decode_values=True):
         cdef:
@@ -953,21 +1091,15 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return response.read_keys_values_dict(decode_values)
 
     def vsiz(self, key):
-        cdef:
-            RequestBuffer request = self.request()
-            TTResponseHandler response
-
-        (request
-         .write_magic(b'\xc8\x38')
-         .write_key(key)
-         .send())
+        cdef TTResponseHandler response
+        self._simple_key_command(b'\xc8\x38', key)
         response = self.response()
         if not response.check_error():
             return response.read_int()
 
     cdef _simple_command(self, bytes bmagic):
         cdef RequestBuffer request = self.request()
-        request.write_magic(bmagic).send()
+        request.send_simple(bmagic)
         return self.response().check_error() == 0
 
     def iterinit(self):
@@ -978,16 +1110,19 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             RequestBuffer request = self.request()
             TTResponseHandler response
 
-        request.write_magic(b'\xc8\x51').send()
+        request.send_simple(b'\xc8\x51')
         response = self.response()
         if not response.check_error():
             return response.read_key()
 
-    def fwmkeys(self, prefix, max_keys=1024):
+    def fwmkeys(self, prefix, max_keys=None):
         cdef:
             bytes bprefix = _encode(prefix)
             RequestBuffer request = self.request()
             TTResponseHandler response
+
+        if max_keys is None:
+            max_keys = (1 << 32) - 1
 
         # fwmkeys method.
         (request
@@ -1033,10 +1168,10 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return response.read_double()
 
     def ext(self, name, key=None, value=None, lock_records=False,
-            lock_all=False, encode_value=True, decode_result=False):
+            lock_all=False, encode_value=True, decode_value=False):
         cdef:
             bytes bname = _encode(name)
-            bytes bkey = _encode(key or '')
+            bytes bkey = _encode(key or b'')
             bytes bval
             int opts = 0
             RequestBuffer request = self.request()
@@ -1045,7 +1180,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         if encode_value:
             bval = self.encode_value(value or '')
         else:
-            bval = _encode(value or '')
+            bval = _encode(value or b'')
 
         if lock_records and lock_all:
             raise ValueError('cannot specify both record and global locking.')
@@ -1056,8 +1191,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             opts = 2
 
         (request
-         .write_magic(b'\xc8\x68')
-         .write_ints((len(bname), opts, len(bkey), len(bval)))
+         .write_bytes(struct_2siiii.pack(b'\xc8\x68', len(bname), opts,
+                                         len(bkey), len(bval)), False)
          .write_bytes(bname, False)
          .write_bytes(bkey, False)
          .write_bytes(bval, False)
@@ -1072,7 +1207,7 @@ cdef class TTBinaryProtocol(BinaryProtocol):
             return True
         elif resp == b'false':
             return False
-        if decode_result:
+        if decode_value:
             return self.decode_value(resp)
         return resp
 
@@ -1080,28 +1215,14 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return self._simple_command(b'\xc8\x70')
 
     def optimize(self, options):
-        cdef:
-            bytes boptions = _encode(options)
-            RequestBuffer request = self.request()
-
-        (request
-         .write_magic(b'\xc8\x71')
-         .write_bytes(boptions, True)
-         .send())
+        self._simple_key_command(b'\xc8\x71', options)
         return self.response().check_error() == 0
 
     def vanish(self):
         return self._simple_command(b'\xc8\x72')
 
     def copy(self, path):
-        cdef:
-            bytes bpath = _encode(path)
-            RequestBuffer request = self.request()
-
-        (request
-         .write_magic(b'\xc8\x73')
-         .write_bytes(bpath, True)
-         .send())
+        self._simple_key_command(b'\xc8\x73', path)
         return self.response().check_error() == 0
 
     def restore(self, path, timestamp, opts=0):
@@ -1133,12 +1254,8 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return self.response().check_error() == 0
 
     def _long_cmd(self, bytes bmagic):
-        cdef:
-            RequestBuffer request = self.request()
-            TTResponseHandler response
-
-        request.write_magic(bmagic).send()
-
+        cdef TTResponseHandler response
+        self.request().send_simple(bmagic)
         response = self.response()
         if not response.check_error():
             return response.read_long()
@@ -1150,240 +1267,240 @@ cdef class TTBinaryProtocol(BinaryProtocol):
         return self._long_cmd(b'\xc8\x81')
 
     def stat(self):
-        cdef:
-            RequestBuffer request = self.request()
-            TTResponseHandler response
-
-        self.request().write_magic(b'\xc8\x88').send()
+        cdef TTResponseHandler response
+        self.request().send_simple(b'\xc8\x88')
         response = self.response()
         if not response.check_error():
             return response.read_bytes()
 
-    cdef _misc(self, name, args, update_log):
+    cpdef misc(self, proc, args, update_log, decode_values=False):
         cdef:
-            bytes arg
-            bytes bname = _encode(name)
-            int nargs
-            int rv
-            list accum = []
+            bytes bprocname = _encode(proc)
+            int opts = 1 if update_log else 0
             RequestBuffer request = self.request()
-            TTResponseHandler response
 
-        # TokyoTyrant supports "fluent" commands - kinda like Redis, you pass
-        # a command name and the requested parameters, get appropriate resp.
         if args is None:
-            args = []
-            nargs = 0
-        else:
-            nargs = len(args)
+            args = ()
 
-        (request
-         .write_magic(b'\xc8\x90')
-         .write_ints((len(bname), 0 if update_log else 1, nargs))
-         .write_bytes(bname, False))
-
-        # Write all arguments, which are assumed to be bytes.
+        pfx = struct_2siii.pack(b'\xc8\x90', len(bprocname), opts, len(args))
+        request.write_bytes(pfx, False).write_bytes(bprocname, False))
         for arg in args:
-            request.write_bytes(arg, True)
+            request.write_bytes(_encode(arg))
 
         request.send()
-
         response = self.response()
-        rv = response.check_error()  # 1 if simple error, 0 if OK.
-        nelem = response.read_int()
-        if rv != 0:
-            return
+        success = self.check_error() == 0
+        return success, response.read_values(decode_values)
 
-        for _ in range(nelem):
-            accum.append(response.read_bytes())
-        return accum
-
-    def misc(self, name, args=None, update_log=True):
-        return self._misc(name, args or [], update_log)
-
-    cdef _misc_kv(self, cmd, key, value, update_log):
+    cdef _misc_kv(self, cmd, key, value, update_log, encode_value):
         cdef:
             bytes bkey = _encode(key)
-            bytes bval = self.encode_value(value)
-        return self._misc(cmd, [bkey, bval], update_log) is not None
+            bytes bval
+        if encode_value:
+            bval = self.encode_value(value)
+        else:
+            bval = _encode(value)
+        ok, _ = self.misc(cmd, (bkey, bval), update_log)
+        return ok
 
-    def misc_put(self, key, value, update_log=True):
-        return self._misc_kv('put', key, value, update_log)
+    def misc_put(self, key, value, update_log=True, encode_value=True):
+        return self._misc_kv('put', key, value, update_log, encode_value)
 
-    def misc_putkeep(self, key, value, update_log=True):
-        return self._misc_kv('putkeep', key, value, update_log)
+    def misc_putkeep(self, key, value, update_log=True, encode_value=True):
+        return self._misc_kv('putkeep', key, value, update_log, encode_value)
 
-    def misc_putcat(self, key, value, update_log=True):
-        return self._misc_kv('putcat', key, value, update_log)
+    def misc_putcat(self, key, value, update_log=True, encode_value=True):
+        return self._misc_kv('putcat', key, value, update_log, encode_value)
 
-    def misc_putdup(self, key, value, update_log=True):
-        return self._misc_kv('putdup', key, value, update_log)
+    def misc_putdup(self, key, value, update_log=True, encode_value=True):
+        return self._misc_kv('putdup', key, value, update_log, encode_value)
 
-    def misc_putdupback(self, key, value, update_log=True):
-        return self._misc_kv('putdupback', key, value, update_log)
+    def misc_putdupback(self, key, value, update_log=True, encode_value=True):
+        return self._misc_kv('putdupback', key, value, update_log,
+                             encode_value)
 
     def misc_out(self, key, update_log=True):
-        return self._misc('out', [_encode(key)], update_log) is not None
+        ok, _ = self._misc('out', [_encode(key)], update_log)
+        return ok
 
-    def misc_get(self, key):
-        res = self._misc('get', [_encode(key)], False)
-        if res:
-            return self.decode_value(res[0])
+    def misc_get(self, key, decode_value=True):
+        ok, data = self.misc('get', [_encode(key)], True, decode_value)
+        if ok and data:
+            return data[0]
 
-    def misc_putlist(self, data, update_log=True):
+    def misc_putlist(self, data, update_log=True, encode_values=True):
         cdef list accum = []
         for key, value in data.items():
             accum.append(_encode(key))
-            accum.append(self.encode_value(value))
-        return self._misc('putlist', accum, update_log) is not None
+            if encode_values:
+                accum.append(self.encode_value(value))
+            else:
+                accum.append(_encode(value))
+        ok, _ = self.misc('putlist', accum, update_log)
+        return ok
 
     def _misc_key_list(self, cmd, keys, update_log):
         cdef list accum = [_encode(key) for key in keys]
-        return self._misc(cmd, accum, update_log)
+        return self.misc(cmd, accum, update_log)
 
     def misc_outlist(self, keys, update_log=True):
-        self._misc_key_list('outlist', keys, update_log)
-        return True
+        ok, _ = self._misc_key_list('outlist', keys, update_log)
+        return ok
 
-    cdef _misc_list_to_dict(self, list items):
-        if items is None: return {}
+    def _misc_list_of_items(self, list data, decode_values):
+        if not data: return []
 
         cdef:
-            dict result = {}
+            list accum = []
+            int i = 0, l = len(data)
+
+        while i < l:
+            key = data[i]
+            value = data[i + 1]
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_values:
+                value = self.decode_value(value)
+            accum.append((key, value))
+            i += 2
+        return accum
+
+    cdef _misc_list_to_dict(self, list data, decode_values):
+        if not data: return {}
+
+        cdef:
+            dict accum = {}
             int i = 0, l = len(items)
 
         while i < l:
-            result[_decode(items[i])] = self.decode_value(items[i + 1])
+            key = data[i]
+            value = data[i + 1]
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_values:
+                value = self.decode_value(value)
+            accum[key] = value
             i += 2
-        return result
+        return accum
 
-    def _misc_list_of_lists(self, list items):
-        if items is None: return []
+    def misc_getlist(self, keys, decode_values=True):
+        ok, data = self._misc_key_list('getlist', keys, update_log, False)
+        return self._misc_list_to_dict(data, decode_values)
 
-        cdef:
-            list result = []
-            int i = 0, l = len(items)
-
-        while i < l:
-            result.append((_decode(items[i]), self.decode_value(items[i + 1])))
-            i += 2
-        return result
-
-    def misc_getlist(self, keys, update_log=True):
-        cdef list items = self._misc_key_list('getlist', keys, update_log)
-        return self._misc_list_to_dict(items)
-
-    def misc_getpart(self, key, start=0, length=None):
-        args = [_encode(key), _encode(str(start))]
+    def misc_getpart(self, key, start=0, length=None, decode_value=True):
+        args = [key, str(start)]
         if length is not None:
-            args.append(_encode(str(length)))
-        result = self._misc('getpart', args, False)
-        if result:
-            return _decode(result[0])
+            args.append(str(length))
+        ok, result = self.misc('getpart', args, False, decode_value)
+        if ok and result:
+            return result[0]
 
     def misc_iterinit(self, key=None):
-        args = [_encode(key)] if key else []
-        return self._misc('iterinit', args, False) is not None
+        ok, _ = self._misc('iterinit', [key] if key else [], False)
+        return ok
 
-    def misc_iternext(self):
-        ret = self._misc('iternext', [], False)
-        if ret:
-            return (_decode(ret[0]), self.decode_value(ret[1]))
+    def misc_iternext(self, decode_value=True):
+        ok, data = self.misc('iternext', [], False, False)
+        if ok and data:
+            key, value = data
+            if self._decode_keys:
+                key = _decode(key)
+            if decode_value:
+                value = self.decode_value(value)
+            return (key, value)
 
     def misc_sync(self):
-        return self._misc('sync', [], True) is not None
+        return self.misc('sync', [], True, False)[0]
 
     def misc_optimize(self, opts, update_log=True):
-        return self._misc('optimize', [_encode(opts)], update_log) is not None
+        ok, _ = self.misc('optimize', [opts], update_log, False)
+        return ok
 
     def misc_vanish(self, update_log=True):
-        return self._misc('vanish', [], update_log) is not None
+        return self.misc('vanish', [], update_log, False)[0]
 
     def misc_error(self):
-        ret = self._misc('error', [], False)
-        if ret:
-            return _decode(ret[0])
+        ok, data = self.misc('error', [], False, False)
+        if ok and data:
+            return _decode(data[0])
 
     def misc_cacheclear(self):
-        return self._misc('cacheclear', [], False) is not None
+        return self.misc('cacheclear', [], False, False)[0]
 
     def misc_defragment(self, nsteps=None, update_log=True):
-        args = [_encode(str(nsteps))] if nsteps is not None else []
-        return self._misc('defrag', args, update_log) is not None
+        args = [str(nsteps)] if nsteps is not None else []
+        return self.misc('defrag', args, update_log, False)[0]
 
-    def misc_regex(self, regex, max_records=None):
-        cdef list items
-        args = [_encode(regex)]
+    def misc_regex(self, regex, max_records=None, decode_values=True):
+        args = [regex]
         if max_records is not None:
-            args.append(_encode(str(max_records)))
-        items = self._misc('regex', args, False)
-        return self._misc_list_to_dict(items)
+            args.append(str(max_records))
+        ok, data = self.misc('regex', args, False, False)
+        return self._misc_list_to_dict(data, decode_values)
 
-    def misc_regexlist(self, regex, max_records=None):
-        cdef list items
-        args = [_encode(regex)]
+    def misc_regexlist(self, regex, max_records=None, decode_values=True):
+        args = [regex]
         if max_records is not None:
-            args.append(_encode(str(max_records)))
-        items = self._misc('regex', args, False)
-        return self._misc_list_of_lists(items)
+            args.append(str(max_records))
+        ok, data = self.misc('regex', args, False, False)
+        return self._misc_list_of_lists(data, decode_values)
 
-    def misc_range(self, start, stop=None, max_records=0):
-        cdef list items
-        args = [_encode(start), _encode(str(max_records))]
+    def misc_range(self, start, stop=None, max_records=0, decode_values=True):
+        args = [start, str(max_records)]
         if stop is not None:
-            args.append(_encode(stop))
-        items = self._misc('range', args, False)
-        return self._misc_list_to_dict(items)
+            args.append(stop)
+        ok, data = self.misc('range', args, False, False)
+        return self._misc_list_to_dict(data, decode_values)
 
-    def misc_rangelist(self, start, stop=None, max_records=0):
-        cdef list items
-        args = [_encode(start), _encode(str(max_records))]
+    def misc_rangelist(self, start, stop=None, max_records=0,
+                       decode_values=True):
+        args = [start, str(max_records)]
         if stop is not None:
-            args.append(_encode(stop))
-        items = self._misc('range', args, False)
-        return self._misc_list_of_lists(items)
+            args.append(stop)
+        ok, data = self.misc('range', args, False, False)
+        return self._misc_list_of_lists(data)
 
     def misc_setindex(self, column, index_type, update_log=True):
-        args = [_encode(column), _encode(str(index_type))]
-        return self._misc('setindex', args, update_log) is not None
+        args = [column, str(index_type)]
+        return self.misc('setindex', args, update_log, False)[0]
 
     def misc_search(self, conditions, cmd=None, update_log=True):
-        cdef list items
         if cmd is not None:
             conditions.append(_encode(cmd))
 
-        items = self._misc('search', conditions, update_log)
+        ok, data = self.misc('search', conditions, update_log, False)
         if cmd is None:
-            return [_decode(key) for key in items]
+            return [_decode(key) for key in data]
         elif cmd == 'get':
             accum = []
-            for item in items:
+            for item in data:
                 key, rest = item[1:].split(b'\x00', 1)
                 accum.append((_decode(key), rest))
             return accum
         elif cmd == 'count':
-            return int(items[0])
-        elif len(items) == 0:
-            return True
+            return int(data[0])
+        elif len(data) == 0:
+            return ok
         else:
             raise ProtocolError('Unexpected results for search cmd=%s' % cmd)
 
     def misc_genuid(self, update_log=True):
-        ret = self._misc('genuid', [], update_log)
-        return int(ret[0])
+        ok, data = self.misc('genuid', [], update_log)
+        return int(data[0])
 
     def keys(self):
+        cdef RequestBuffer request = self.request()
         cdef TTResponseHandler response
 
         # iterinit method.
-        self.request().write_magic(b'\xc8\x50').send()
-        if self.response().check_error():
+        request.send_simple(b'\xc8\x50')
+        response = self.response()
+        if response.check_error():
             return []
 
         while True:
             # iternext method.
-            self.request().write_magic(b'\xc8\x51').send()
-            response = self.response()
+            request.send_simple(b'\xc8\x51')
             if response.check_error():
                 raise StopIteration
             yield response.read_key()

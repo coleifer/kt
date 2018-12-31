@@ -344,7 +344,8 @@ class KyotoTycoon(BaseClient):
         return decode(self.status(self._default_db)['path'])
 
     def set_database(self, db):
-        self._default_db = db
+        self._protocol.set_database(db)
+        self._protocol_http.set_database(db)
         return self
 
 

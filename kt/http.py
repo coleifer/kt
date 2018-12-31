@@ -43,7 +43,8 @@ class HttpProtocol(object):
     cursor_id = 0
 
     def __init__(self, host='127.0.0.1', port=1978, decode_keys=True,
-                 encode_value=None, decode_value=None, timeout=None):
+                 encode_value=None, decode_value=None, timeout=None,
+                 default_db=None):
         self._host = host
         self._port = port
         self._timeout = timeout
@@ -53,9 +54,13 @@ class HttpProtocol(object):
             self.decode_key = noop_decode
         self.encode_value = encode_value or encode
         self.decode_value = decode_value or decode
+        self.default_db = default_db or 0
         self._prefix = '/rpc'
         self._conn = self._get_conn()
         self._headers = {'Content-Type': self._content_type}
+
+    def set_database(self, db):
+        self.default_db = db
 
     def _get_conn(self):
         return HTTPConnection(self._host, self._port, timeout=self._timeout)
@@ -102,8 +107,8 @@ class HttpProtocol(object):
 
         return accum
 
-    def _post(self, path, body, db):
-        self._conn.request('POST', '/rpc' + path, body, self._headers)
+    def _post(self, path, body):
+        self._conn.request('POST', self._prefix + path, body, self._headers)
         return self._conn.getresponse()
 
     def request(self, path, data, db=None, allowed_status=None, atomic=False):
@@ -116,7 +121,7 @@ class HttpProtocol(object):
 
         prefix = {}
         if db is not False:
-            prefix['DB'] = db or 0
+            prefix['DB'] = self.default_db if db is None else db
         if atomic:
             prefix['atomic'] = ''
 
