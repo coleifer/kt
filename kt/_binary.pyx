@@ -104,7 +104,8 @@ cdef class _Socket(object):
 
     def __dealloc__(self):
         if not self.is_closed:
-            self.buf.close()
+            if self.buf is not None:
+                self.buf.close()
             self._socket.close()
 
     cdef _read_from_socket(self, int length):
@@ -164,13 +165,12 @@ cdef class _Socket(object):
         if self.is_closed:
             return False
 
+        self.is_closed = True
+        self._socket.close()
+
         self.purge()
         self.buf.close()
         self.buf = None
-
-        self._socket.shutdown(socket.SHUT_RDWR)
-        self._socket.close()
-        self.is_closed = True
         return True
 
 
