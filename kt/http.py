@@ -16,7 +16,6 @@ except ImportError:
 
 from ._binary import decode
 from ._binary import encode
-from ._binary import noop_decode
 from .exceptions import ProtocolError
 from .exceptions import ServerError
 

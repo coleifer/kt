@@ -3,6 +3,7 @@ from cpython.bytes cimport PyBytes_AsStringAndSize
 from cpython.bytes cimport PyBytes_Check
 from cpython.unicode cimport PyUnicode_AsUTF8String
 from cpython.unicode cimport PyUnicode_Check
+from cpython.unicode cimport PyUnicode_DecodeUTF8
 from cpython.version cimport PY_MAJOR_VERSION
 from libc.stdint cimport int32_t
 from libc.stdint cimport int64_t
@@ -59,15 +60,20 @@ cdef inline bytes _encode(obj):
     return result
 
 cdef inline unicode _decode(obj):
-    cdef unicode result
+    cdef:
+        unicode result
+        char *buf
+        Py_ssize_t n
+
     if PyBytes_Check(obj):
-        result = obj.decode('utf-8')
+        PyBytes_AsStringAndSize(<bytes>obj, &buf, &n)
+        result = PyUnicode_DecodeUTF8(buf, n, NULL)
     elif PyUnicode_Check(obj):
         result = <unicode>obj
     elif obj is None:
         return None
     else:
-        result = str(obj)
+        result = unicode(obj)
     return result
 
 def encode(obj):
@@ -75,9 +81,6 @@ def encode(obj):
 
 def decode(obj):
     return _decode(obj)
-
-def noop_decode(obj):
-    return obj
 
 
 cdef int READSIZE = 64 * 1024
@@ -99,7 +102,7 @@ cdef class _Socket(object):
         self.bytes_read = self.bytes_written = 0
         self.recvbuf = bytearray(READSIZE)
 
-    def __del__(self):
+    def __dealloc__(self):
         if not self.is_closed:
             self.buf.close()
             self._socket.shutdown(socket.SHUT_RDWR)
@@ -201,12 +204,9 @@ cdef class SocketPool(object):
         return _Socket(sock)
 
     cdef _Socket checkout(self):
-        cdef:
-            float now = time.time()
-            float ts
-            tid = get_ident()
-            _Socket sock
+        cdef _Socket sock
 
+        tid = get_ident()
         with self.mutex:
             if tid in self.in_use:
                 sock = self.in_use[tid]
@@ -216,7 +216,7 @@ cdef class SocketPool(object):
                     return sock
 
             while self.free:
-                ts, sock = heapq.heappop(self.free)
+                _, sock = heapq.heappop(self.free)
                 self.in_use[tid] = sock
                 return sock
 
@@ -225,10 +225,9 @@ cdef class SocketPool(object):
             return sock
 
     cdef checkin(self):
-        cdef:
-            tid = get_ident()
-            _Socket sock
+        cdef _Socket sock
 
+        tid = get_ident()
         if tid in self.in_use:
             sock = self.in_use.pop(tid)
             if not sock.is_closed:
@@ -310,11 +309,6 @@ cdef class RequestBuffer(object):
 
     cdef RequestBuffer write_int(self, int i):
         self.buf.write(struct_i.pack(i))
-        return self
-
-    cdef RequestBuffer write_ints(self, ints):
-        fmt = 'I' * len(ints)
-        self.buf.write(s_pack('>%s' % fmt, *ints))
         return self
 
     cdef RequestBuffer write_ii(self, i1, i2):
@@ -627,7 +621,7 @@ cdef class BinaryProtocol(object):
         else:
             self._pool = None
 
-    def __del__(self):
+    def __dealloc__(self):
         if self._pool is not None:
             self._pool.close_all()
 
