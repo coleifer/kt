@@ -105,7 +105,6 @@ cdef class _Socket(object):
     def __dealloc__(self):
         if not self.is_closed:
             self.buf.close()
-            self._socket.shutdown(socket.SHUT_RDWR)
             self._socket.close()
 
     cdef _read_from_socket(self, int length):
