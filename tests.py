@@ -27,6 +27,7 @@ from kt import constants
 class BaseTestCase(unittest.TestCase):
     _server = None
     db = None
+    lua_path = os.path.join(os.path.dirname(__file__), 'kt/scripts/')
     server = None
     server_kwargs = None
 
@@ -438,7 +439,7 @@ class TestKyotoTycoonSerializers(BaseTestCase):
 
 
 class TestKyotoTycoonScripting(BaseTestCase):
-    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/kt.lua')
+    lua_script = os.path.join(BaseTestCase.lua_path, 'kt.lua')
     server = EmbeddedServer
     server_kwargs = {
         'database': '%',
@@ -702,7 +703,7 @@ class TestKyotoTycoonScripting(BaseTestCase):
 
 
 class TestKyotoTycoonScriptingMultiDB(BaseTestCase):
-    lua_script = os.path.join(os.path.dirname(__file__), 'kt/scripts/kt.lua')
+    lua_script = os.path.join(BaseTestCase.lua_path, 'kt.lua')
     server = EmbeddedServer
     server_kwargs = {'database': '%', 'server_args': ['-scr', lua_script, '%']}
 
@@ -769,8 +770,9 @@ class TestKyotoTycoonScriptingMultiDB(BaseTestCase):
 
 
 class TestKyotoTycoonMultiDatabase(BaseTestCase):
+    lua_script = os.path.join(BaseTestCase.lua_path, 'kt.lua')
     server = EmbeddedServer
-    server_kwargs = {'database': '%', 'server_args': ['*']}
+    server_kwargs = {'database': '%', 'server_args': ['-scr', lua_script, '*']}
 
     def test_multiple_databases_present(self):
         report = self.db.report()
@@ -778,6 +780,24 @@ class TestKyotoTycoonMultiDatabase(BaseTestCase):
         self.assertTrue('db_1' in report)
         self.assertTrue(report['db_0'].endswith(b'path=*'))
         self.assertTrue(report['db_1'].endswith(b'path=%'))
+
+    def test_multiple_databases_lua(self):
+        db = KyotoTycoon(self._server._host, self._server._port,
+                         serializer=KT_NONE)
+
+        db.set_bulk({'k1': 'v1-0', 'k2': 'v2-0', 'k3': 'v3-0'}, db=0)
+        db.set_bulk({'k1': 'v1-1', 'k2': 'v2-1', 'k3': 'v3-1'}, db=1)
+
+        L = db.lua
+        self.assertEqual(L.list(), L.list(db=0, encode_values=False))
+        self.assertEqual(L.list(db=0, encode_values=False), {
+            'k1': b'v1-0',
+            'k2': b'v2-0',
+            'k3': b'v3-0'})
+        self.assertEqual(L.list(db=1, encode_values=False), {
+            'k1': b'v1-1',
+            'k2': b'v2-1',
+            'k3': b'v3-1'})
 
     def test_multiple_databases(self):
         k0 = KyotoTycoon(self._server._host, self._server._port, default_db=0)

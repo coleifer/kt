@@ -71,7 +71,7 @@ class BaseClient(object):
             self._encode_value = msgpack.packb
             self._decode_value = msgpack.unpackb
         elif self._serializer == KT_NONE:
-            self._encode_value = lambda x: x
+            self._encode_value = encode
             self._decode_value = lambda x: x
         elif self._serializer == KT_PICKLE:
             self._encode_value = partial(pickle.dumps,
