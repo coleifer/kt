@@ -145,7 +145,7 @@ Generally:
   file-hash (``.kch``).
 * For ordered collections or indexes, use either the cache-tree (``%``) or the
   file b-tree (``.kct``).
-* I avoid the prototype hash and btree as the entire data-structure is locked
+* I avoid the prototype hash and btree as the *entire data-structure* is locked
   during writes (as opposed to an individual record or page).
 
 For more information about the above database types, their algorithmic
@@ -272,14 +272,20 @@ in-memory databases, you use special symbols instead of filenames.
 
 * ``hash_table.tch`` - on-disk hash table ("tch").
 * ``btree.tcb`` - on-disk b-tree ("tcb").
+* ``table.tct`` - on-disk table database ("tct").
 * ``*`` - in-memory hash-table.
 * ``+`` - in-memory tree (ordered).
 
-There are two additional database-types, but their usage is beyond the scope of
+There is an additional database-types, but their usage is beyond the scope of
 this document:
 
-* ``table.tct`` - on-disk table database ("tct").
 * ``table.tcf`` - fixed-length database ("tcf").
+
+For more information about the above database types, their algorithmic
+complexity, and the unit of locking, see `ttserver documentation <http://fallabs.com/tokyotyrant/spex.html#serverprog>`_.
+
+Using the table database
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 The table database is neat, as it you can store another layer of key/value
 pairs in the value field. These key/value pairs are serialized using ``0x0`` as
@@ -287,8 +293,91 @@ the delimiter. :py:class:`TokyoTyrant` provides a special serializer,
 ``TT_TABLE``, which properly handles reading and writing data dictionaries to a
 table database.
 
-For more information about the above database types, their algorithmic
-complexity, and the unit of locking, see `ttserver documentation <http://fallabs.com/tokyotyrant/spex.html#serverprog>`_.
+.. code-block:: pycon
+
+    >>> tt = TokyoTyrant(serializer=TT_TABLE)
+    >>> tt.set('k1', {'name': 'charlie', 'location': 'Topeka, KS'})
+    True
+    >>> tt.get('k1')
+    {'name': 'charlie', 'location': 'Topeka, KS'}
+
+Table databases support a special search API which can be used to filter
+records by attributes stored in the value field. In this way, they act like a
+rudimentary relational database table, that can be queried with a simple
+``WHERE`` clause.
+
+Secondary indexes can be created to improve the efficiency of the search API.
+
+Simple example using the :py:class:`QueryBuilder` helper. First let's setup our
+table database with some data:
+
+.. code-block:: pycon
+
+    >>> from kt import TokyoTyrant
+    >>> tt = TokyoTyrant(serializer=TT_TABLE)
+    >>> tt.set_bulk({
+    ...     'huey': {'name': 'huey', 'type': 'cat', 'eyes': 'blue', 'age': '7'},
+    ...     'mickey': {'name': 'mickey', 'type': 'dog', 'eyes': 'blue', 'age': '9'},
+    ...     'zaizee': {'name': 'zaizee', 'type': 'cat', 'eyes': 'blue', 'age': '5'},
+    ...     'charlie': {'name': 'charlie', 'type': 'human', 'eyes': 'brown', 'age': '35'},
+    ...     'leslie': {'name': 'leslie', 'type': 'human', 'eyes': 'blue', 'age': '34'},
+    ...     'connor': {'name': 'connor', 'type': 'human', 'eyes': 'brown', 'age': '3'},
+    ... })
+    ...
+    True
+
+We can use the :py:class:`QueryBuilder` to construct query expressions:
+
+.. code-block:: pycon
+
+    >>> from kt import QueryBuilder
+    >>> from kt import constants
+    >>> query = (QueryBuilder()
+    ...          .filter('type', constants.OP_STR_EQ, 'cat')
+    ...          .order_by('name', constants.ORDER_STR_DESC))
+    ...
+    >>> query.execute(tt)  # Returns the matching keys.
+    ['zaizee', 'huey']
+
+We can use multiple filter expressions:
+
+.. code-block:: pycon
+
+    >>> query = (QueryBuilder()
+    ...          .filter('age', constants.OP_NUM_GE, '7')
+    ...          .filter('type', constants.OP_STR_ANY, 'human,cat')
+    ...          .order_by('age', constants.ORDER_NUM_DESC))
+    >>> query.execute(tt)
+    ['charlie', 'leslie', 'huey']
+
+To get both the key and the associated value, we use the
+:py:meth:`QueryBuilder.get` method:
+
+.. code-block:: pycon
+
+    >>> query.get(tt)
+    [('charlie', {'name': 'charlie', 'type': 'human', ...}),
+     ('leslie',  {'name': 'leslie', 'type': 'human', ...}),
+     ('huey',    {'name': 'huey', 'type': 'cat', ...{)]
+
+To avoid scanning the entire table database, we can create secondary indexes on
+the fields we wish to query:
+
+.. code-block:: pycon
+
+    >>> tt.set_index('name', constants.INDEX_STR)  # Create string index on name.
+    True
+    >>> tt.set_index('age', constants.INDEX_NUM)  # Numeric index on age.
+    True
+
+We can optimize and delete indexes:
+
+.. code-block:: pycon
+
+    >>> tt.optimize_index('name')  # Optimize the "name" index.
+    True
+    >>> tt.delete_index('age')  # Delete the "age" index.
+    True
 
 Lua Scripts
 ^^^^^^^^^^^

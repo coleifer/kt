@@ -12,10 +12,11 @@ kt
 and `Tokyo Tyrant <http://fallabs.com/tokyotyrant/>`_. *kt* is designed to be
 performant and simple-to-use.
 
+* Full-featured implementation of protocol.
 * Binary protocols implemented as C extension.
 * Thread-safe and greenlet-safe.
+* Socket pooling.
 * Simple APIs.
-* Full-featured implementation of protocol.
 
 .. toctree::
    :maxdepth: 2

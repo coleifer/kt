@@ -36,7 +36,7 @@ Serializers
 Kyoto Tycoon client
 -------------------
 
-.. py:class:: KyotoTycoon(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None, default_db=0)
+.. py:class:: KyotoTycoon(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None, connection_pool=False, default_db=0)
 
     :param str host: server host.
     :param int port: server port.
@@ -44,17 +44,27 @@ Kyoto Tycoon client
         Accepts ``KT_BINARY``, ``KT_JSON``, ``KT_MSGPACK``, ``KT_NONE`` or ``KT_PICKLE``.
     :param bool decode_keys: allow unicode keys, encoded as UTF-8.
     :param int timeout: socket timeout (optional).
+    :param bool connection_pool: use a connection pool to manage sockets.
     :param int default_db: default database to operate on.
 
     Client for interacting with Kyoto Tycoon database.
 
-    .. py:method:: checkin()
+    .. py:method:: close([allow_reuse=True])
 
-        Return the communication socket to the pool for re-use.
-
-    .. py:method:: close()
+        :param bool allow_reuse: when the connection pool is enabled, this flag
+            indicates whether the connection can be reused. For unpooled
+            clients this flag has no effect.
 
         Close the connection to the server.
+
+    .. py:method:: close_all()
+
+        When using the connection pool, this method can close *all* client
+        connections.
+
+    .. py:method:: get_bulk(keys[, db=None[, decode_values=True]])
+
+        :param list keys: keys to retrieve
 
     .. py:method:: get(key, db=None)
 
