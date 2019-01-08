@@ -486,9 +486,9 @@ class TokyoTyrant(BaseClient):
 
     def update(self, __data=None, no_reply=False, encode_values=True, **kw):
         if __data is None:
-            __data = kwargs
-        elif kwargs:
-            __data.update(kwargs)
+            __data = kw
+        elif kw:
+            __data.update(kw)
         return self.set_bulk(__data, no_reply, encode_values)
 
     def setdup(self, key, value, encode_value=True):
