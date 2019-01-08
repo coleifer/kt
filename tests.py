@@ -95,9 +95,13 @@ class KyotoTycoonTests(object):
         self.assertEqual(self.db.remove('k1'), 0)
 
         self.db['k1'] = 'v1'
+        self.assertTrue(self.db.exists('k1'))
+        self.assertEqual(self.db.length('k1'), 2)
         self.assertEqual(self.db.remove_bulk(['k1', 'k3', 'kx']), 2)
         self.assertEqual(self.db.remove_bulk([]), 0)
         self.assertEqual(self.db.remove_bulk(['k2']), 1)
+        self.assertFalse(self.db.exists('k1'))
+        self.assertTrue(self.db.length('k1') is None)
 
         self.db.append('key', 'abc')
         self.db.append('key', 'def')
@@ -861,6 +865,7 @@ class TestKyotoTycoonMultiDatabase(BaseTestCase):
 
         for k in (k0, k1):
             self.assertTrue(k.exists('k3'))
+            self.assertEqual(k.length('k3'), 5)
             self.assertEqual(k.remove('k3'), 1)
             self.assertFalse(k.exists('k3'))
 

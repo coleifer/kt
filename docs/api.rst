@@ -276,7 +276,7 @@ Kyoto Tycoon client
     .. py:method:: add(key, value, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to add
-        :param value: value to store (will be serialized using serializer)
+        :param value: value to store
         :param int db: database index
         :param int expire_time: expiration time in seconds
         :param bool encode_value: serialize the value using the configured
@@ -290,7 +290,7 @@ Kyoto Tycoon client
     .. py:method:: replace(key, value, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to replace
-        :param value: value to store (will be serialized using serializer)
+        :param value: value to store
         :param int db: database index
         :param int expire_time: expiration time in seconds
         :param bool encode_value: serialize the value using the configured
@@ -301,14 +301,14 @@ Kyoto Tycoon client
         Replace a key/value pair to the database. This operation will only
         succeed if the key alreadys exist in the database.
 
-    .. py:method:: append(key, value, db=None, expire_time=None)
+    .. py:method:: append(key, value, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to append value to
-        :param value: data to append (will be serialized using serializer)
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param value: data to append
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool encode_value: serialize the value using the configured
+            serialization method.
         :return: boolean indicating if value was appended
         :rtype: bool
 
@@ -318,29 +318,39 @@ Kyoto Tycoon client
     .. py:method:: exists(key, db=None)
 
         :param str key: key to test
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: boolean indicating if key exists
-        :rtype: bool
 
-    .. py:method:: seize(key, db=None)
+        Return whether or not the given key exists in the database.
+
+    .. py:method:: length(key, db=None)
+
+        :param str key: key
+        :param int db: database index
+        :return: length of the value in bytes, or ``None`` if not found
+
+        Return the length of the raw value stored at the given key. If the key
+        does not exist, returns ``None``.
+
+    .. py:method:: seize(key, db=None, decode_value=True)
 
         :param str key: key to remove
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
+        :param bool decode_value: deserialize the value using the configured
+            serialization method.
         :return: value stored at given key or ``None`` if key does not exist.
 
-        Get and remove the data stored in a given key.
+        Get and remove the data stored in a given key in a single operation.
 
-    .. py:method:: cas(key, old_val, new_val, db=None, expire_time=None)
+    .. py:method:: cas(key, old_val, new_val, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to append value to
         :param old_val: original value to test
-        :param old_val: new value to store
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param new_val: new value to store
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool encode_value: serialize the old and new values using the
+            configured serialization method.
         :return: boolean indicating if compare-and-swap succeeded.
         :rtype: bool
 
@@ -351,24 +361,24 @@ Kyoto Tycoon client
         :param str key: key to increment
         :param int n: value to add
         :param int orig: default value if key does not exist
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
         :return: new value at key
         :rtype: int
+
+        Increment the value stored in the given key.
 
     .. py:method:: incr_double(key, n=1., orig=None, db=None, expire_time=None)
 
         :param str key: key to increment
         :param float n: value to add
         :param float orig: default value if key does not exist
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
         :return: new value at key
         :rtype: float
+
+        Increment the floating-point value stored in the given key.
 
     .. py:method:: __getitem__(key_or_keydb)
 

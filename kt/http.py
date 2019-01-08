@@ -284,9 +284,10 @@ class HttpProtocol(object):
         return status != 450
 
     def length(self, key, db=None):
-        resp, status = self.request('/check', {'key': key}, db, (450,), False)
+        resp, status = self.request('/check', {'key': key}, db, (450,),
+                                    decode_keys=False)
         if status == 200:
-            return resp[b'vsiz']
+            return int(resp[b'vsiz'])
 
     def seize(self, key, db=None, decode_value=True):
         resp, status = self.request('/seize', {'key': key}, db, (450,),
