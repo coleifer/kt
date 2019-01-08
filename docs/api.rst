@@ -49,7 +49,7 @@ Kyoto Tycoon client
 
     Client for interacting with Kyoto Tycoon database.
 
-    .. py:method:: close([allow_reuse=True])
+    .. py:method:: close(allow_reuse=True)
 
         :param bool allow_reuse: when the connection pool is enabled, this flag
             indicates whether the connection can be reused. For unpooled
@@ -62,7 +62,7 @@ Kyoto Tycoon client
         When using the connection pool, this method can close *all* client
         connections.
 
-    .. py:method:: get_bulk(keys[, db=None[, decode_values=True]])
+    .. py:method:: get_bulk(keys, db=None, decode_values=True)
 
         :param list keys: keys to retrieve
         :param int db: database index
@@ -73,96 +73,154 @@ Kyoto Tycoon client
         Efficiently retrieve multiple key/value pairs from the database. If a
         key does not exist, it will not be present in the result dictionary.
 
+    .. py:method:: get_bulk_details(keys, db=None, decode_values=True)
+
+        :return: List of tuples: ``(db index, key, value, expire time)``
+
+        Like :py:meth:`~KyotoTycoon.get_bulk`, but the return value is a list
+        of tuples with additional information for each key.
+
+    .. py:method:: get_bulk_raw(db_key_list, decode_values=True)
+
+        :param db_key_list: a list of 2-tuples to retrieve: ``(db index, key)``
+        :param bool decode_values: decode values using the configured
+            deserialization scheme (e.g., ``KT_MSGPACK``).
+        :return: result dictionary
+
+        Like :py:meth:`~KyotoTycoon.get_bulk`, except it supports fetching
+        key/value pairs from multiple databases. The input is a list of
+        2-tuples consisting of ``(db, key)`` and the return value is a
+        dictionary of ``key: value`` pairs.
+
+    .. py:method:: get_bulk_raw_details(db_key_list, decode_values=True)
+
+        :return: List of tuples: ``(db index, key, value, expire time)``
+
+        Like :py:meth:`~KyotoTycoon.get_bulk_raw`, but the return value is a
+        list of tuples with additional information for each key.
+
     .. py:method:: get(key, db=None)
 
         :param str key: key to look-up
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: deserialized value or ``None`` if key does not exist.
 
-    .. py:method:: get_raw(key, db=None)
+        Fetch and deserialize the value for the given key.
+
+    .. py:method:: get_bytes(key, db=None)
 
         :param str key: key to look-up
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: raw bytestring value or ``None`` if key does not exist.
 
-    .. py:method:: set(key, value, db=None, expire_time=None)
+        Fetch the value for the given key. The resulting value will not
+        be deserialized.
+
+    .. py:method:: set_bulk(data, db=None, expire_time=None, no_reply=False, encode_values=True)
+
+        :param dict data: mapping of key/value pairs to set.
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :param bool encode_values: serialize the values using the configured
+            serialization scheme (e.g., ``KT_MSGPACK``).
+        :return: number of keys that were set, or ``None`` if ``no_reply``.
+
+        Efficiently set multiple key/value pairs. If given, the provided ``db``
+        and ``expire_time`` values will be used for all key/value pairs being
+        set.
+
+    .. py:method:: set_bulk_raw(data, no_reply=False, encode_values=True)
+
+        :param list data: a list of 4-tuples: ``(db, key, value, expire time)``
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :param bool encode_values: serialize the values using the configured
+            serialization scheme (e.g., ``KT_MSGPACK``).
+        :return: number of keys that were set, or ``None`` if ``no_reply``.
+
+        Efficiently set multiple key/value pairs. Unlike
+        :py:meth:`~KyotoTycoon.set_bulk`, this method can be used to set
+        key/value pairs in multiple databases in a single call, and each key
+        can specify its own expire time.
+
+    .. py:method:: set(key, value, db=None, expire_time=None, no_reply=False)
 
         :param str key: key to set
         :param value: value to store (will be serialized using serializer)
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
         :return: number of rows set (1)
 
-    .. py:method:: remove(key, db=None)
+        Set a single key/value pair.
 
-        :param str key: key to remove
-        :param db: database index
-        :type db: int or None
-        :return: number of rows removed
+    .. py:method:: set_bytes(key, value, db=None, expire_time=None, no_reply=False)
 
-    .. py:method:: get_bulk(keys, db=None)
+        :param str key: key to set
+        :param value: raw value to store
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :return: number of rows set (1)
 
-        :param list keys: list of keys to look-up
-        :param db: database index
-        :type db: int or None
-        :return: dictionary of all key/value pairs that were found
-        :rtype: dict
+        Set a single key/value pair without encoding the value.
 
-    .. py:method:: get_bulk_raw(keys, db=None)
-
-        :param list keys: list of keys to look-up
-        :param db: database index
-        :type db: int or None
-        :return: dictionary of all key/raw-value pairs that were found
-        :rtype: dict
-
-    .. py:method:: set_bulk(__data=None, db=None, expire_time=None, **kwargs)
-
-        :param dict __data: mapping of key/value pairs to set.
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
-        :param kwargs: mapping of key/value pairs to set, expressed as keyword arguments
-        :return: number of keys that were set
-
-    .. py:method:: remove_bulk(keys, db=None)
+    .. py:method:: remove_bulk(keys, db=None, no_reply=False)
 
         :param list keys: list of keys to remove
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
         :return: number of keys that were removed
 
-    .. py:method:: script(name, __data=None, encode_values=True, **kwargs)
+    .. py:method:: remove_bulk_raw(db_key_list, no_reply=False)
+
+        :param db_key_list: a list of 2-tuples to retrieve: ``(db index, key)``
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :return: number of keys that were removed
+
+        Like :py:meth:`~KyotoTycoon.remove_bulk`, but allows keys to be removed
+        from multiple databases in a single call.
+
+    .. py:method:: remove(key, db=None, no_reply=False)
+
+        :param str key: key to remove
+        :param int db: database index
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :return: number of rows removed
+
+    .. py:method:: script(name, data=None, no_reply=False, encode_values=True, decode_values=True)
 
         :param str name: name of lua function to call
-        :param dict __data: mapping of key/value pairs to pass to lua function.
+        :param dict data: mapping of key/value pairs to pass to lua function.
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
         :param bool encode_values: serialize values passed to lua function.
-        :param kwargs: mapping of key/value pairs to pass to lua function, expressed as keyword arguments
+        :param bool decode_values: deserialize values returned by lua function.
         :return: dictionary of key/value pairs returned by function
-        :rtype: dict
 
         Execute a lua function. Kyoto Tycoon lua extensions accept arbitrary
         key/value pairs as input, and return a result dictionary. If
-        ``encode_values`` is ``True``, the input values will be serialized and
-        the result values will be deserialized using the client's serializer.
+        ``encode_values`` is ``True``, the input values will be serialized.
+        Likewise, if ``decode_values`` is ``True`` the values returned by the
+        Lua function will be deserialized using the configured serializer.
 
     .. py:method:: clear(db=None)
 
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: boolean indicating success
 
         Remove all keys from the database.
 
     .. py:method:: status(db=None)
 
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: status fields and values
         :rtype: dict
 
