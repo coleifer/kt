@@ -67,7 +67,7 @@ Kyoto Tycoon client
         :param list keys: keys to retrieve
         :param int db: database index
         :param bool decode_values: decode values using the configured
-            deserialization scheme (e.g., ``KT_MSGPACK``).
+            serialization scheme.
         :return: result dictionary
 
         Efficiently retrieve multiple key/value pairs from the database. If a
@@ -75,6 +75,10 @@ Kyoto Tycoon client
 
     .. py:method:: get_bulk_details(keys, db=None, decode_values=True)
 
+        :param list keys: keys to retrieve
+        :param int db: database index
+        :param bool decode_values: decode values using the configured
+            serialization scheme.
         :return: List of tuples: ``(db index, key, value, expire time)``
 
         Like :py:meth:`~KyotoTycoon.get_bulk`, but the return value is a list
@@ -84,7 +88,7 @@ Kyoto Tycoon client
 
         :param db_key_list: a list of 2-tuples to retrieve: ``(db index, key)``
         :param bool decode_values: decode values using the configured
-            deserialization scheme (e.g., ``KT_MSGPACK``).
+            serialization scheme.
         :return: result dictionary
 
         Like :py:meth:`~KyotoTycoon.get_bulk`, except it supports fetching
@@ -94,6 +98,9 @@ Kyoto Tycoon client
 
     .. py:method:: get_bulk_raw_details(db_key_list, decode_values=True)
 
+        :param db_key_list: a list of 2-tuples to retrieve: ``(db index, key)``
+        :param bool decode_values: decode values using the configured
+            serialization scheme.
         :return: List of tuples: ``(db index, key, value, expire time)``
 
         Like :py:meth:`~KyotoTycoon.get_bulk_raw`, but the return value is a
@@ -105,7 +112,7 @@ Kyoto Tycoon client
         :param int db: database index
         :return: deserialized value or ``None`` if key does not exist.
 
-        Fetch and deserialize the value for the given key.
+        Fetch and (optionally) deserialize the value for the given key.
 
     .. py:method:: get_bytes(key, db=None)
 
@@ -416,11 +423,17 @@ Kyoto Tycoon client
 
         Count total number of keys in the database.
 
-    .. py:method:: update(__data=None, db=None, expire_time=None, **kwargs)
+    .. py:method:: update(__data=None, db=None, expire_time=None, no_reply=False, encode_values=True, **kwargs)
 
-        See :py:meth:`KyotoTycoon.set_bulk`.
+        Efficiently set multiple key/value pairs. If given, the provided ``db``
+        and ``expire_time`` values will be used for all key/value pairs being
+        set.
 
-    .. py:method:: pop(key, db=None)
+        See :py:meth:`KyotoTycoon.set_bulk` for details.
+
+    .. py:method:: pop(key, db=None, decode_value=True)
+
+        Get and remove the data stored in a given key in a single operation.
 
         See :py:meth:`KyotoTycoon.seize`.
 
@@ -428,8 +441,7 @@ Kyoto Tycoon client
 
         :param str prefix: key prefix to match
         :param int max_keys: maximum number of results to return (optional)
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: list of keys that matched the given prefix.
         :rtype: list
 
@@ -437,8 +449,7 @@ Kyoto Tycoon client
 
         :param str regex: regular-expression to match
         :param int max_keys: maximum number of results to return (optional)
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: list of keys that matched the given regular expression.
         :rtype: list
 
@@ -447,37 +458,45 @@ Kyoto Tycoon client
         :param str origin: source string for comparison
         :param int distance: maximum edit-distance for similarity (optional)
         :param int max_keys: maximum number of results to return (optional)
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: list of keys that were within a certain edit-distance of origin
         :rtype: list
 
     .. py:method:: cursor(db=None, cursor_id=None)
 
-        :param db: database index
-        :type db: int or None
-        :param cursor_id: cursor id (will be automatically created if None)
-        :type cursor_id: int or None
+        :param int db: database index
+        :param int cursor_id: cursor id (will be automatically created if None)
         :return: :py:class:`Cursor` object
 
     .. py:method:: keys(db=None)
 
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: all keys in database
         :rtype: generator
 
+        .. warning::
+            The :py:meth:`~KyotoCabinet.keys` method uses a cursor and can be
+            rather slow.
+
+    .. py:method:: keys_nonlazy(db=None)
+
+        :param int db: database index
+        :return: all keys in database
+        :rtype: list
+
+        Non-lazy implementation of :py:meth:`~KyotoTycoon.keys`.
+        Behind-the-scenes, calls :py:meth:`~KyotoTycoon.match_prefix` with an
+        empty string as the prefix.
+
     .. py:method:: values(db=None)
 
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: all values in database
         :rtype: generator
 
     .. py:method:: items(db=None)
 
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: all key/value tuples in database
         :rtype: generator
 
@@ -495,40 +514,72 @@ Kyoto Tycoon client
 
         :param int db: database index
 
-        Specify the default database for the client.
+        Specify the default database index for the client.
 
 Tokyo Tyrant client
 -------------------
 
-.. py:class:: TokyoTyrant(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None)
+.. py:class:: TokyoTyrant(host='127.0.0.1', port=1978, serializer=KT_BINARY, decode_keys=True, timeout=None, connection_pool=False)
 
     :param str host: server host.
     :param int port: server port.
     :param serializer: serialization method to use for storing/retrieving values.
-        Accepts ``KT_BINARY``, ``KT_JSON``, ``KT_MSGPACK``, ``KT_NONE`` or ``KT_PICKLE``.
-    :param bool decode_keys: allow unicode keys, encoded as UTF-8.
+        Accepts ``KT_BINARY``, ``KT_JSON``, ``KT_MSGPACK``, ``KT_NONE``, ``KT_PICKLE``,
+        or ``TT_TABLE`` (for use with table databases).
+    :param bool decode_keys: automatically decode keys, encoded as UTF-8.
     :param int timeout: socket timeout (optional).
-    :param int default_db: default database to operate on.
+    :param bool connection_pool: use a connection pool to manage sockets.
 
     Client for interacting with Tokyo Tyrant database.
 
-    .. py:method:: checkin()
+    .. py:method:: close(allow_reuse=True)
 
-        Return the communication socket to the pool for re-use.
-
-    .. py:method:: close()
+        :param bool allow_reuse: when the connection pool is enabled, this flag
+            indicates whether the connection can be reused. For unpooled
+            clients this flag has no effect.
 
         Close the connection to the server.
+
+    .. py:method:: close_all()
+
+        When using the connection pool, this method can close *all* client
+        connections.
+
+    .. py:method:: get_bulk(keys, decode_values=True)
+
+        :param list keys: list of keys to retrieve
+        :param bool decode_values: decode values using the configured
+            serialization scheme.
+        :return: dictionary of all key/value pairs that were found
+
+        Efficiently retrieve multiple key/value pairs from the database. If a
+        key does not exist, it will not be present in the result dictionary.
 
     .. py:method:: get(key)
 
         :param str key: key to look-up
         :return: deserialized value or ``None`` if key does not exist.
 
-    .. py:method:: get_raw(key)
+        Fetch and (optionally) deserialize the value for the given key.
+
+    .. py:method:: get_bytes(key)
 
         :param str key: key to look-up
-        :return: raw binary value or ``None`` if key does not exist.
+        :return: raw bytestring value or ``None`` if key does not exist.
+
+        Fetch the value for the given key. The resulting value will not
+        be deserialized.
+
+    .. py:method:: set_bulk(data, no_reply=False, encode_values=True)
+
+        :param dict data: mapping of key/value pairs to set.
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :param bool encode_values: serialize the values using the configured
+            serialization scheme (e.g., ``KT_MSGPACK``).
+        :return: boolean indicating success, or ``None`` if ``no_reply``.
+
+        Efficiently set multiple key/value pairs.
 
     .. py:method:: set(key, value)
 
@@ -536,32 +587,24 @@ Tokyo Tyrant client
         :param value: value to store (will be serialized using serializer)
         :return: boolean indicating success
 
-    .. py:method:: remove(key)
+        Set a single key/value pair.
 
-        :param str key: key to remove
-        :return: number of rows removed
+    .. py:method:: set_bytes(key, value)
 
-    .. py:method:: get_bulk(keys)
-
-        :param list keys: list of keys to look-up
-        :return: dictionary of all key/value pairs that were found
-        :rtype: dict
-
-    .. py:method:: get_bulk_raw(keys)
-
-        :param list keys: list of keys to look-up
-        :return: dictionary of all key/raw-value pairs that were found
-        :rtype: dict
-
-    .. py:method:: set_bulk(__data=None, **kwargs)
-
-        :param dict __data: mapping of key/value pairs to set.
-        :param kwargs: mapping of key/value pairs to set, expressed as keyword arguments
+        :param str key: key to set
+        :param value: raw value to store
         :return: boolean indicating success
+
+        Set a single key/value pair without encoding the value.
 
     .. py:method:: remove_bulk(keys)
 
         :param list keys: list of keys to remove
+        :return: boolean indicating success
+
+    .. py:method:: remove(key)
+
+        :param str key: key to remove
         :return: boolean indicating success
 
     .. py:method:: script(name, key=None, value=None, lock_records=False, lock_all=False, encode_value=True, decode_result=False, as_list=False, as_dict=False, as_int=False)
@@ -572,14 +615,17 @@ Tokyo Tyrant client
         :param bool lock_records: lock records modified during script execution
         :param bool lock_all: lock all records during script execution
         :param bool encode_value: serialize the value before sending to the script
-        :param bool decode_result: deserialize the script return value
+        :param bool decode_value: deserialize the script return value
         :param bool as_list: deserialize newline-separated value into a list
         :param bool as_dict: deserialize list of tab-separated key/value pairs into dict
         :param bool as_int: return value as integer
-        :return: byte-string or obj returned by function (depending on decode_result)
+        :return: byte-string or object returned by function (depending on decode_value)
 
-        Execute a lua function. Tokyo Tyrant lua extensions accept two
-        parameters, a key and a value, and return a result byte-string.
+        Execute a lua function, passing as arguments the given ``key`` and
+        ``value`` (if provided). The return value is a bytestring, which can be
+        deserialized by specifying ``decode_value=True``. The arguments
+        ``as_list``, ``as_dict`` and ``as_int`` can be used to apply specific
+        deserialization to the returned value.
 
     .. py:method:: clear()
 
@@ -594,118 +640,96 @@ Tokyo Tyrant client
 
         Obtain status information from the server.
 
-    .. py:method:: add(key, value)
+    .. py:method:: synchronize()
+
+        :return: boolean indicating success
+
+        Synchronize data to disk.
+
+    .. py:method:: optimize(options)
+
+        :param str options: option format string to use when optimizing database.
+        :return: boolean indicating success
+
+    .. py:method:: add(key, value, encode_value=True)
 
         :param str key: key to add
-        :param value: value to store (will be serialized using serializer)
+        :param value: value to store
+        :param bool encode_value: serialize the value using the configured
+            serialization scheme.
         :return: boolean indicating if key could be added or not
-        :rtype: bool
 
         Add a key/value pair to the database. This operation will only succeed
         if the key does not already exist in the database.
 
-    .. py:method:: append(key, value)
+    .. py:method:: append(key, value, encode_value=True)
 
         :param str key: key to append value to
-        :param value: data to append (will be serialized using serializer)
+        :param value: value to append
+        :param bool encode_value: serialize the value using the configured
+            serialization scheme.
         :return: boolean indicating if value was appended
-        :rtype: bool
 
         Appends data to an existing key/value pair. If the key does not exist,
-        this is equivalent to :py:meth:`~TokyoTyrant.set`.
+        this is equivalent to the :py:meth:`~TokyoTyrant.set` method.
 
-    .. py:method:: addshl(key, value, width)
+    .. py:method:: addshl(key, value, width, encode_value=True)
 
         :param str key: key to append value to
-        :param value: data to append (will be serialized using serializer)
+        :param value: data to append
         :param int width: number of bytes to shift
+        :param bool encode_value: serialize the value using the configured
+            serialization scheme.
         :return: boolean indicating success
-        :rtype: bool
 
         Concatenate a value at the end of the existing record and shift it to
         the left by *width* bytes.
-
-    .. py:method:: setnr(key, value)
-
-        :param str key: key to set
-        :param value: value to store (will be serialized using serializer)
-        :return: no return value
-
-        Set with no server response.
-
-    .. py:method:: setnr_bulk(__data=None, **kwargs)
-
-        :param dict __data: mapping of key/value pairs to set.
-        :param kwargs: mapping of key/value pairs to set, expressed as keyword arguments
-        :return: no return value
-
-        Set multiple key/value pairs using the same no-response API as :py:meth:`TokyoTyrant.setnr`.
-
-    .. py:method:: setdup(key, value)
-
-        :param str key: key to set
-        :param value: value to store (will be serialized using serializer)
-        :return: boolean indicating success
-
-        Set key/value pair. If using a BTree and the key already exists, the
-        new value will be added to the end.
-
-    .. py:method:: setdupback(key, value)
-
-        :param str key: key to set
-        :param value: value to store (will be serialized using serializer)
-        :return: boolean indicating success
-
-        Set key/value pair. If using a BTree and the key already exists, the
-        new value will be added to the front.
-
-    .. py:method:: get_part(key, start=None, end=None)
-
-        :param str key: key to look-up
-        :param int start: start offset
-        :param int end: number of characters to retrieve (after start).
-        :return: the substring portion of value requested or ``False`` if the
-            value does not exist or the start index exceeded the value length.
 
     .. py:method:: exists(key)
 
         :param str key: key to test
         :return: boolean indicating if key exists
-        :rtype: bool
+
+        Return whether or not the given key exists in the database.
 
     .. py:method:: length(key)
 
-        :param str key: key to test
-        :return: length of value stored at key (or None if key does not exist)
-        :rtype: int
+        :param str key: key
+        :param int db: database index
+        :return: length of the value in bytes, or ``None`` if not found
+
+        Return the length of the raw value stored at the given key. If the key
+        does not exist, returns ``None``.
+
+    .. py:method:: seize(key, decode_value=True)
+
+        :param str key: key to remove
+        :param bool decode_value: deserialize the value using the configured
+            serialization method.
+        :return: value stored at given key or ``None`` if key does not exist.
+
+        Get and remove the data stored in a given key in a single operation.
 
     .. py:method:: incr(key, n=1)
 
         :param str key: key to increment
         :param int n: value to add
-        :return: new value at key
-        :rtype: int
+        :return: incremented result value
 
     .. py:method:: incr_double(key, n=1.)
 
         :param str key: key to increment
         :param float n: value to add
-        :return: new value at key
-        :rtype: float
+        :return: incremented result value
 
-    .. py:method:: misc(cmd, args=None, update_log=True)
-
-        :param str cmd: Command to execute
-        :param list args: Zero or more bytestring arguments to misc function.
-        :param bool update_log: Add misc command to update log.
-
-        Run a miscellaneous command using the "misc" API. Returns a list of
-        zero or more bytestrings.
+        Increment the floating-point value stored in the given key.
 
     .. py:method:: count()
 
         :return: number of key/value pairs in the database
         :rtype: int
+
+        Count the number of key/value pairs in the database
 
     .. py:method:: __getitem__(key)
 
@@ -730,11 +754,64 @@ Tokyo Tyrant client
     .. py:method:: __len__()
 
         :return: total number of keys in the database.
-        :rtype: int
 
-    .. py:method:: update(__data=None, db=None, expire_time=None, **kwargs)
+        Identical to :py:meth:`~TokyoTyrant.count`.
 
-        See :py:meth:`TokyoTyrant.set_bulk`.
+    .. py:method:: update(__data=None, no_reply=False, encode_values=True, **kwargs)
+
+        :param dict __data: mapping of key/value pairs to set.
+        :param bool no_reply: execute the operation without a server
+            acknowledgment.
+        :param bool encode_values: serialize the values using the configured
+            serialization scheme.
+        :param kwargs: arbitrary key/value pairs to set.
+        :return: boolean indicating success.
+
+        Efficiently set multiple key/value pairs. Data can be provided as a
+        dict or as an arbitrary number of keyword arguments.
+
+        See also: :py:meth:`~TokyoTyrant.set_bulk`.
+
+    .. py:method:: setdup(key, value, encode_value=True)
+
+        :param str key: key to set
+        :param value: value to store
+        :param bool encode_value: serialize the value using the configured
+            serialization scheme.
+        :return: boolean indicating success
+
+        Set key/value pair. If using a B-Tree and the key already exists, the
+        new value will be added to the beginning.
+
+    .. py:method:: setdupback(key, value)
+
+        :param str key: key to set
+        :param value: value to store
+        :param bool encode_value: serialize the value using the configured
+            serialization scheme.
+        :return: boolean indicating success
+
+        Set key/value pair. If using a B-Tree and the key already exists, the
+        new value will be added to the end.
+
+    .. py:method:: get_part(key, start=None, end=None, decode_value=True)
+
+        :param str key: key to look-up
+        :param int start: start offset
+        :param int end: number of characters to retrieve (after start).
+        :param bool decode_value: deserialize the value using the configured
+            serialization scheme.
+        :return: the substring portion of value requested or ``False`` if the
+            value does not exist or the start index exceeded the value length.
+
+    .. py:method:: misc(cmd, args=None, update_log=True)
+
+        :param str cmd: Command to execute
+        :param list args: Zero or more bytestring arguments to misc function.
+        :param bool update_log: Add misc command to update log.
+
+        Run a miscellaneous command using the "misc" API. Returns a list of
+        zero or more bytestrings.
 
     .. py:attribute:: size
 
@@ -745,17 +822,6 @@ Tokyo Tyrant client
         Return a 2-tuple of error code and message for the last error reported
         by the server (if set).
 
-    .. py:method:: optimize(options)
-
-        :param str options: option format string to use when optimizing database.
-        :return: boolean indicating success
-
-    .. py:method:: synchronize()
-
-        :return: boolean indicating success
-
-        Synchronize data to disk.
-
     .. py:method:: copy(path)
 
         :param str path: destination for copy of database.
@@ -763,13 +829,61 @@ Tokyo Tyrant client
 
         Copy the database file to the given path.
 
-    .. py:method:: get_range(start, stop=None, max_keys=0)
+    .. py:method:: restore(path, timestamp, options=0)
+
+        :param str path: path to update log directory
+        :param datetime timestamp: datetime from which to restore
+        :param int options: optional flags
+        :return: boolean indicating success
+
+        Restore the database file from the update log.
+
+    .. py:method:: set_master(host, port, timestamp, options=0)
+
+        :param str host: host of master server
+        :param int port: port of master server
+        :param datetime timestamp: start timestamp
+        :param int options: optional flags
+        :return: boolean indicating success
+
+        Set the replication master.
+
+    .. py:method:: clear_cache()
+
+        :return: boolean indicating success
+
+    .. py:method:: defragment(nsteps=None)
+
+        :param int nsteps: number of defragmentation steps
+        :return: boolean indicating success
+
+        Defragment the database.
+
+    .. py:method:: get_range(start, stop=None, max_keys=0, decode_values=True)
 
         :param str start: start-key for range
         :param str stop: stop-key for range (optional)
         :param int max_keys: maximum keys to fetch
-        :return: a mapping of key-value pairs falling within the given range.
-        :rtype: dict
+        :param bool decode_values: deserialize the values using the configured
+            serialization scheme.
+        :return: a dictionary mapping of key-value pairs falling within the
+            given range.
+
+        Fetch a range of key/value pairs and return them as a dictionary.
+
+        .. note:: Only works with tree databases.
+
+    .. py:method:: get_rangelist(start, stop=None, max_keys=0, decode_values=True)
+
+        :param str start: start-key for range
+        :param str stop: stop-key for range (optional)
+        :param int max_keys: maximum keys to fetch
+        :param bool decode_values: deserialize the values using the configured
+            serialization scheme.
+        :return: a list of ordered key-value pairs falling within the given range.
+
+        Fetch a range of key/value pairs and return them as an ordered list of
+        key/value tuples.
 
         .. note:: Only works with tree databases.
 
@@ -778,40 +892,48 @@ Tokyo Tyrant client
         :param str prefix: key prefix to match
         :param int max_keys: maximum number of results to return
         :return: list of keys that matched the given prefix.
-        :rtype: list
 
-    .. py:method:: match_regex(regex, max_keys=1024)
+    .. py:method:: match_regex(regex, max_keys=None, decode_values=True)
 
         :param str regex: regular-expression to match
         :param int max_keys: maximum number of results to return
-        :return: list of keys that matched the given regular expression.
-        :rtype: list
+        :param bool decode_values: deserialize the values using the configured
+            serialization scheme.
+        :return: a dictionary mapping of key-value pairs which matched the regex.
+
+    .. py:method:: match_regexlist(regex, max_keys=None, decode_values=True)
+
+        :param str regex: regular-expression to match
+        :param int max_keys: maximum number of results to return
+        :param bool decode_values: deserialize the values using the configured
+            serialization scheme.
+        :return: a list of ordered key-value pairs which matched the regex.
 
     .. py:method:: iter_from(start_key)
 
         :param start_key: key to start iteration.
-        :return: list of key/value pairs obtained by iterating from start-key.
-        :rtype: dict
+        :return: list of key/value tuples obtained by iterating from start-key.
 
     .. py:method:: keys()
+
+        :return: list all keys in database
+        :rtype: generator
+
+    .. py:method:: keys_fast()
 
         :return: list of all keys in database
         :rtype: list
 
+        Return a list of all keys in the database in a single operation.
+
     .. py:method:: items()
 
-        :return: list of all key/value tuples in database
-        :rtype: list
-
-    .. py:method:: keys_fast()
-
-        :return: list of all keys in database loaded in a single operation.
-        :rtype: list
+        :return: list all key/value tuples in database
+        :rtype: generator
 
     .. py:method:: items_fast()
 
-        :return: list of all key/value tuples in database loaded in a single
-            operation.
+        :return: list of all key/value tuples in database in a single operation.
         :rtype: list
 
     .. py:method:: set_index(name, index_type, check_exists=False)

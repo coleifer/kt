@@ -484,12 +484,12 @@ class TokyoTyrant(BaseClient):
     __len__ = count
     pop = seize
 
-    def update(self, __data=None, **kwargs):
+    def update(self, __data=None, no_reply=False, encode_values=True, **kw):
         if __data is None:
             __data = kwargs
         elif kwargs:
             __data.update(kwargs)
-        return self.set_bulk(__data)
+        return self.set_bulk(__data, no_reply, encode_values)
 
     def setdup(self, key, value, encode_value=True):
         return self._protocol.misc_putdup(key, value, True, encode_value)
