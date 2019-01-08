@@ -233,43 +233,68 @@ Kyoto Tycoon client
 
         Obtain report on overall status of server, including all databases.
 
+    .. py:method:: ulog_list()
+
+        :return: a list of 3-tuples describing the files in the update log.
+
+        Returns a list of metadata about the state of the update log. For each
+        file in the update log, a 3-tuple is returned. For example:
+
+        .. code-block:: pycon
+
+            >>> kt.ulog_list()
+            [('/var/lib/database/ulog/kt/0000000037.ulog',
+              '67150706',
+              datetime.datetime(2019, 1, 4, 1, 28, 42, 43000)),
+             ('/var/lib/database/ulog/kt/0000000038.ulog',
+              '14577366',
+              datetime.datetime(2019, 1, 4, 1, 41, 7, 245000))]
+
+    .. py:method:: ulog_remove(max_dt)
+
+        :param datetime max_dt: maximum datetime to preserve
+        :return: boolean indicating success
+
+        Removes all update-log files older than the given datetime.
+
     .. py:method:: synchronize(hard=False, command=None, db=None)
 
         :param bool hard: perform a "hard" synchronization
         :param str command: command to run after synchronization
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: boolean indicating success
+
+        Synchronize the database, optionally executing the given command upon
+        success. This can be used to create hot backups, for example.
 
     .. py:method:: vacuum(step=0, db=None)
 
         :param int step: number of steps, default is 0
-        :param db: database index
-        :type db: int or None
+        :param int db: database index
         :return: boolean indicating success
 
-    .. py:method:: add(key, value, db=None, expire_time=None)
+    .. py:method:: add(key, value, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to add
         :param value: value to store (will be serialized using serializer)
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool encode_value: serialize the value using the configured
+            serialization method.
         :return: boolean indicating if key could be added or not
         :rtype: bool
 
         Add a key/value pair to the database. This operation will only succeed
         if the key does not already exist in the database.
 
-    .. py:method:: replace(key, value, db=None, expire_time=None)
+    .. py:method:: replace(key, value, db=None, expire_time=None, encode_value=True)
 
         :param str key: key to replace
         :param value: value to store (will be serialized using serializer)
-        :param db: database index
-        :type db: int or None
-        :param expire_time: expiration time in seconds
-        :type expire_time: int or None
+        :param int db: database index
+        :param int expire_time: expiration time in seconds
+        :param bool encode_value: serialize the value using the configured
+            serialization method.
         :return: boolean indicating if key could be replaced or not
         :rtype: bool
 
