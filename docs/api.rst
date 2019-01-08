@@ -65,6 +65,13 @@ Kyoto Tycoon client
     .. py:method:: get_bulk(keys[, db=None[, decode_values=True]])
 
         :param list keys: keys to retrieve
+        :param int db: database index
+        :param bool decode_values: decode values using the configured
+            deserialization scheme (e.g., ``KT_MSGPACK``).
+        :return: result dictionary
+
+        Efficiently retrieve multiple key/value pairs from the database. If a
+        key does not exist, it will not be present in the result dictionary.
 
     .. py:method:: get(key, db=None)
 
