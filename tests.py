@@ -433,13 +433,13 @@ class TestKyotoTycoonSerializers(BaseTestCase):
     def test_serializer_msgpack(self):
         db = self.get_client(KT_MSGPACK)
 
-        obj = {'w': {'wk': 'wv'}, 'x': 0, 'y': ['aa', 'bb'], 'z': None}
+        obj = {'w': {'wk': 'wv'}, 'x': 0, 'y': ['aa', 'bb'], b'z': None}
         db.set('k1', obj)
-        self.assertEqual(db.get('k1'), {b'w': {b'wk': b'wv'}, b'x': 0,
-                                        b'y': [b'aa', b'bb'], b'z': None})
+        self.assertEqual(db.get('k1'), {'w': {'wk': 'wv'}, 'x': 0,
+                                        'y': ['aa', 'bb'], b'z': None})
 
         db.set('k2', '')
-        self.assertEqual(db.get('k2'), b'')
+        self.assertEqual(db.get('k2'), '')
 
         db.set('k3', [u'foo', b'bar'])
         self.assertEqual(db.get('k3'), [u'foo', b'bar'])
