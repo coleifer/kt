@@ -441,6 +441,9 @@ class TestKyotoTycoonSerializers(BaseTestCase):
         db.set('k2', '')
         self.assertEqual(db.get('k2'), b'')
 
+        db.set('k3', [u'foo', b'bar'])
+        self.assertEqual(db.get('k3'), [u'foo', b'bar'])
+
 
 class TestKyotoTycoonScripting(BaseTestCase):
     lua_script = os.path.join(BaseTestCase.lua_path, 'kt.lua')

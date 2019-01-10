@@ -68,8 +68,8 @@ class BaseClient(object):
                                             .encode('utf-8'))
             self._decode_value = lambda v: json.loads(v.decode('utf-8'))
         elif self._serializer == KT_MSGPACK:
-            self._encode_value = msgpack.packb
-            self._decode_value = msgpack.unpackb
+            self._encode_value = lambda o: msgpack.packb(o, use_bin_type=True)
+            self._decode_value = lambda b: msgpack.unpackb(b, raw=False)
         elif self._serializer == KT_NONE:
             self._encode_value = encode
             self._decode_value = lambda x: x
