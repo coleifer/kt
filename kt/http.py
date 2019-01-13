@@ -133,7 +133,12 @@ class HttpProtocol(object):
             else:
                 body = db_data
 
-        r = self._post(path, body)
+        try:
+            r = self._post(path, body)
+        except Exception as exc:
+            self.close()
+            raise
+
         content = r.read()
         content_type = r.getheader('content-type')
         status = r.status

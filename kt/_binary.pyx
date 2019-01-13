@@ -695,7 +695,13 @@ cdef class BinaryProtocol(object):
         return _deserialize_dict(data, decode_values)
 
     cdef RequestBuffer request(self):
-        if self._state.conn is None or <_Socket>(self._state.conn).is_closed:
+        cdef _Socket sock = self._state.conn
+        if sock is None:
+            self.connect()
+        elif sock.is_closed:
+            if self._pool is not None:
+                self._pool.close()
+            self._state.conn = None
             self.connect()
         return RequestBuffer(<_Socket>(self._state.conn), self.encode_value)
 
