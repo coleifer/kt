@@ -710,6 +710,38 @@ function list(inmap, outmap)
 end
 
 
+-- Fetch a range of key-value pairs.
+-- accepts: { start: key, stop: key, db: idx }
+-- returns: { k1=v1, k2=v2, ... }
+function get_range(inmap, outmap)
+  _select_db(inmap)
+  local start_key = inmap.start
+  local stop_key = inmap.stop
+  local cur = db:cursor()
+  if start_key then
+    if not cur:jump(start_key) then
+      return kt.RVSUCCESS
+    end
+  else
+    if not cur:jump() then
+      return kt.RVSUCCESS
+    end
+  end
+  local key, value
+  while true do
+    key = cur:get_key()
+    if stop_key and key > stop_key then
+      break
+    end
+    outmap[key] = cur:get_value()
+    if not cur:step() then
+      break
+    end
+  end
+  return kt.RVSUCCESS
+end
+
+
 -- Hash one or more values.
 -- accepts: { val1: method1, val2: method2, ... }
 -- returns: { val1: hash1, val2: hash2, ... }

@@ -654,6 +654,33 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(self.db.script('list'),
                          {'k1': 'v1', 'k2': 'v2', 'k3': 'v3'})
 
+    def test_script_get_range(self):
+        self.assertEqual(self.db.script('get_range'), {})
+
+        data = {'k%s' % i: 'v%s' % i for i in range(11)}
+        self.db.set_bulk(data)
+
+        def assertRange(start, stop, expected):
+            params = {}
+            if start: params['start'] = start
+            if stop: params['stop'] = stop
+            self.assertEqual(self.db.script('get_range', params), expected)
+
+        assertRange('k8', None, {'k8': 'v8', 'k9': 'v9'})
+        assertRange('k80', None, {'k9': 'v9'})
+        assertRange(None, 'k2', {'k0': 'v0', 'k1': 'v1', 'k10': 'v10',
+                                 'k2': 'v2'})
+        assertRange(None, 'k2.2', self.db.script('get_range', {'stop': 'k2'}))
+        assertRange('k10', 'k3', {'k10': 'v10', 'k2': 'v2', 'k3': 'v3'})
+        assertRange('k101', 'k3', {'k2': 'v2', 'k3': 'v3'})
+        assertRange('k10', 'k31', {'k10': 'v10', 'k2': 'v2', 'k3': 'v3'})
+        assertRange('a', 'k1', {'k0': 'v0', 'k1': 'v1'})
+        assertRange('k9', 'z', {'k9': 'v9'})
+        assertRange('a', 'b', {})
+        assertRange('x', 'y', {})
+        assertRange('x', None, {})
+        assertRange(None, 'a', {})
+
     def test_python_list_integration(self):
         L = self.db.lua
         P = self.db._protocol
