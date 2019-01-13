@@ -10,6 +10,7 @@ function _select_db(inmap)
   else
     db = kt.db
   end
+  return db
 end
 
 -- helper function for hash functions.
@@ -706,6 +707,7 @@ function list(inmap, outmap)
     if not key then break end
     outmap[key] = value
   end
+  cur:disable()
   return kt.RVSUCCESS
 end
 
@@ -720,10 +722,12 @@ function get_range(inmap, outmap)
   local cur = db:cursor()
   if start_key then
     if not cur:jump(start_key) then
+      cur:disable()
       return kt.RVSUCCESS
     end
   else
     if not cur:jump() then
+      cur:disable()
       return kt.RVSUCCESS
     end
   end
@@ -738,6 +742,7 @@ function get_range(inmap, outmap)
       break
     end
   end
+  cur:disable()
   return kt.RVSUCCESS
 end
 
