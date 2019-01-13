@@ -808,6 +808,11 @@ class TestKyotoTycoonMultiDatabase(BaseTestCase):
     server = EmbeddedServer
     server_kwargs = {'database': '%', 'server_args': ['-scr', lua_script, '*']}
 
+    def tearDown(self):
+        super(TestKyotoTycoonMultiDatabase, self).tearDown()
+        self.db.clear(0)
+        self.db.clear(1)
+
     def test_multiple_databases_present(self):
         report = self.db.report()
         self.assertTrue('db_0' in report)
