@@ -664,7 +664,8 @@ cdef class BinaryProtocol(object):
         return n
 
     cpdef connect(self):
-        if self._state.conn is not None: return False
+        if self._state.conn is not None:
+            return False
 
         if self._pool is not None:
             self._state.conn = self._pool.checkout()
@@ -694,7 +695,7 @@ cdef class BinaryProtocol(object):
         return _deserialize_dict(data, decode_values)
 
     cdef RequestBuffer request(self):
-        if self._state.conn is None:
+        if self._state.conn is None or <_Socket>(self._state.conn).is_closed:
             self.connect()
         return RequestBuffer(<_Socket>(self._state.conn), self.encode_value)
 
