@@ -760,3 +760,124 @@ function hash(inmap, outmap)
     end
   end
 end
+
+
+-- Get a portion of a string value stored in a key. Behaves like slice operator
+-- does in Python.
+-- accepts: { key, start, stop, db }
+-- returns: { value }
+function get_part(inmap, outmap)
+  local db = _select_db(inmap)
+  local start_idx = inmap.start or 0
+  local stop_idx = inmap.stop
+  local key = inmap.key
+  if not key then
+    kt.log("info", "missing key in get_part() call")
+    return kt.RVEINVALID
+  end
+
+  local value, xt = db:get(key)
+  if value ~= nil then
+    start_idx = tonumber(start_idx)
+    if start_idx >= 0 then start_idx = start_idx + 1 end
+    if stop_idx then
+      stop_idx = tonumber(stop_idx)
+      -- If the stop index is negative, we need to subtract 1 to get
+      -- Python-like semantics.
+      if stop_idx < 0 then stop_idx = stop_idx - 1 end
+      value = string.sub(value, start_idx, stop_idx)
+    else
+      value = string.sub(value, start_idx)
+    end
+  end
+  outmap.value = value
+  return kt.RVSUCCESS
+end
+
+
+-- Queue helpers.
+--
+-- add/enqueue data to a queue
+-- accepts: { queue, data, db }
+-- returns { id }
+function queue_add(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  local data = inmap.data
+  if not queue or not data then
+    kt.log("info", "missing queue or data parameter in queue_add call")
+    return kt.RVEINVALID
+  end
+  local id = db:increment_double(queue, 1)
+  if not id then
+    kt.log("info", "unable to determine id when adding item to queue!")
+    return kt.RVELOGIC
+  end
+  local key = string.format("%s\t%012d", queue, id)
+  if not db:add(key, data) then
+    kt.log("info", "could not add key, already exists")
+    return kt.RVELOGIC
+  end
+  outmap.id = id
+  return kt.RVSUCCESS
+end
+
+-- pop/dequeue data from queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_pop(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  if not queue then
+    kt.log("info", "missing queue parameter in queue_pop call")
+    return kt.RVEINVALID
+  end
+
+  local n = tonumber(inmap.n or 1)
+  local key = string.format("%s\t", queue)
+  local keys = db:match_prefix(key, n)
+  local i
+  for i = 1, #keys do
+    local k = keys[i]
+    local val = db:get(k)
+    if db:remove(k) and val then
+      outmap[tostring(i - 1)] = val
+    end
+  end
+  return kt.RVSUCCESS
+end
+
+-- get queue size
+-- accepts: { queue, db }
+-- returns: { num }
+function queue_size(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  if not queue then
+    kt.log("info", "missing queue parameter in queue_size call")
+    return kt.RVEINVALID
+  end
+
+  local keys = db:match_prefix(string.format("%s\t", queue))
+  outmap.num = tostring(#keys)
+  return kt.RVSUCCESS
+end
+
+
+-- clear queue, removing all items
+-- accepts: { queue, db }
+-- returns: { num }
+function queue_clear(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  if not queue then
+    kt.log("info", "missing queue parameter in queue_size call")
+    return kt.RVEINVALID
+  end
+
+  local keys = db:match_prefix(string.format("%s\t", queue))
+  db:remove_bulk(keys)
+  db:remove(queue)
+  outmap.num = tostring(#keys)
+  return kt.RVSUCCESS
+end

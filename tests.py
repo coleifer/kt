@@ -681,6 +681,66 @@ class TestKyotoTycoonScripting(BaseTestCase):
         assertRange('x', None, {})
         assertRange(None, 'a', {})
 
+    def test_get_part(self):
+        V = '0123456789'
+        self.db.update(k1=V, k2='')
+
+        def assertPart(key, start, stop, expected):
+            params = {'key': key, 'start': start}
+            if stop is not None:
+                params['stop'] = stop
+            result = self.db.script('get_part', params)
+            if expected is None:
+                self.assertTrue('value' not in result)
+            else:
+                self.assertEqual(result['value'], expected)
+
+        assertPart('k1', 0, None, V)
+        assertPart('k1', 0, -1, V[0:-1])
+        assertPart('k1', 1, 3, V[1:3])
+        assertPart('k1', 1, 30, V[1:])
+        assertPart('k1', 20, 30, '')
+        assertPart('k1', -3, None, V[-3:])
+        assertPart('k1', -5, -1, V[-5:-1])
+        assertPart('k1', -20, -10, '')
+        assertPart('k1', -20, None, V[-20:])
+
+        assertPart('k2', 0, None, '')
+        assertPart('k2', 1, -1, '')
+        assertPart('k2', -1, None, '')
+
+        assertPart('k3', 0, None, None)
+        assertPart('k3', 1, -1, None)
+
+    def test_queue_methods(self):
+        L = self.db.lua
+        for i in range(5):
+            L.queue_add(queue='tq', data='item-%s' % i)
+
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '5'})
+
+        # By default one item is dequeued.
+        result = L.queue_pop(queue='tq')
+        self.assertEqual(result, {'0': 'item-0'})
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '4'})
+
+        # We can dequeue multiple items, which are newline-separated.
+        result = L.queue_pop(queue='tq', n=3)
+        self.assertEqual(result, {'0': 'item-1', '1': 'item-2', '2': 'item-3'})
+
+        # It's OK if fewer items exist.
+        result = L.queue_pop(queue='tq', n=3)
+        self.assertEqual(result, {'0': 'item-4'})
+
+        # No items -> empty string and zero count.
+        self.assertEqual(L.queue_pop(queue='tq'), {})
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '0'})
+
+        L.queue_add(queue='tq', data='item-y')
+        L.queue_add(queue='tq', data='item-z')
+        self.assertEqual(L.queue_clear(queue='tq'), {'num': '2'})
+        self.assertEqual(L.queue_clear(queue='tq'), {'num': '0'})
+
     def test_python_list_integration(self):
         L = self.db.lua
         P = self.db._protocol
@@ -1168,6 +1228,13 @@ class TokyoTyrantTests(object):
         self.assertEqual(self.db.get_part('key', 3, 2), 'de')
 
         del self.db['key']
+        self.assertTrue(self.db.addshl('key', 'foo', 4))
+        self.assertTrue(self.db.addshl('key', 'bar', 4))
+        self.assertEqual(self.db.get('key'), 'obar')
+        self.assertTrue(self.db.addshl('key', 'nug', 4))
+        self.assertEqual(self.db.get('key'), 'rnug')
+
+        del self.db['key']
         self.assertTrue(self.db.add('key', 'foo'))
         self.assertFalse(self.db.add('key', 'bar'))
 
@@ -1562,31 +1629,36 @@ class TestTokyoTyrantScripting(BaseTestCase):
     def test_script_queue(self):
         L = self.db.lua
         for i in range(5):
-            L.enqueue('tq', 'item-%s' % i)
+            L.queue_add('tq', 'item-%s' % i)
 
-        self.assertEqual(L.queuesize('tq', as_int=True), 5)
+        self.assertEqual(L.queue_size('tq', as_int=True), 5)
 
         # By default one item is dequeued.
-        item = L.dequeue('tq', decode_value=True, as_list=True)
+        item = L.queue_pop('tq', decode_value=True, as_list=True)
         self.assertEqual(item, ['item-0'])
-        self.assertEqual(L.queuesize('tq', as_int=True), 4)
+        self.assertEqual(L.queue_size('tq', as_int=True), 4)
 
         # We can dequeue multiple items, which are newline-separated.
-        items = L.dequeue('tq', 3, decode_value=True, as_list=True)
+        items = L.queue_pop('tq', 3, decode_value=True, as_list=True)
         self.assertEqual(items, ['item-1', 'item-2', 'item-3'])
 
         # It's OK if fewer items exist.
-        items = L.dequeue('tq', 3, decode_value=True, as_list=True)
+        items = L.queue_pop('tq', 3, decode_value=True, as_list=True)
         self.assertEqual(items, ['item-4'])
 
         # No items -> empty string and zero count.
-        self.assertEqual(L.dequeue('tq', as_list=True), [])
-        self.assertEqual(L.dequeue('tq'), b'')  # Empty string.
-        self.assertEqual(L.queuesize('tq', as_int=True), 0)
+        self.assertEqual(L.queue_pop('tq', as_list=True), [])
+        self.assertEqual(L.queue_pop('tq'), b'')  # Empty string.
+        self.assertEqual(L.queue_size('tq', as_int=True), 0)
 
         # Try blocking dequeue (without allowing it to block).
-        L.enqueue('tq', 'item-x')
-        self.assertEqual(L.bdequeue('tq', as_list=True), [b'item-x'])
+        L.queue_add('tq', 'item-x')
+        self.assertEqual(L.queue_bpop('tq', as_list=True), [b'item-x'])
+
+        L.queue_add('tq', 'item-y')
+        L.queue_add('tq', 'item-z')
+        self.assertEqual(L.queue_clear('tq', as_int=True), 2)
+        self.assertEqual(L.queue_clear('tq', as_int=True), 0)
 
 
 class TestTokyoTyrantScriptingTable(BaseTestCase):

@@ -213,7 +213,7 @@ end
 
 -- Queue
 -- enqueue a record
-function enqueue(key, value)
+function queue_add(key, value)
   local id = _adddouble(key, 1)
   if not id then
     _log("unable to determine id")
@@ -229,7 +229,7 @@ end
 
 
 -- dequeue a record
-function dequeue(key, max)
+function queue_pop(key, max)
   max = tonumber(max)
   if not max or max < 1 then
     max = 1
@@ -249,19 +249,29 @@ end
 
 
 -- blocking dequeue.
-function bdequeue(key, max)
-  res = dequeue(key, max)
+function queue_bpop(key, max)
+  res = queue_pop(key, max)
   while res == "" do
     sleep(0.1)
-    res = dequeue(key, max)
+    res = queue_pop(key, max)
   end
   return res
 end
 
 
 -- get the queue size
-function queuesize(key)
+function queue_size(key)
   key = string.format("%s\t", key)
   local keys = _fwmkeys(key)
+  return #keys
+end
+
+
+-- clear queue
+function queue_clear(key)
+  key = string.format("%s\t", key)
+  local keys = _fwmkeys(key)
+  _misc("outlist", unpack(keys))
+  _out(key)
   return #keys
 end
