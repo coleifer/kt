@@ -20,7 +20,7 @@ function hkv(inmap, outmap, fn)
     kt.log("system", "hash function missing required: 'table_key'")
     return kt.RVEINVALID
   end
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   inmap.table_key = nil
   local value, xt = db:get(key)
   local value_tbl = {}
@@ -226,7 +226,7 @@ function skv(inmap, outmap, fn)
     kt.log("system", "set function missing required: 'key'")
     return kt.RVEINVALID
   end
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   inmap.key = nil
   local value, xt = db:get(key)
   local value_tbl = {}
@@ -380,7 +380,7 @@ function svv(inmap, outmap, fn)
     kt.log("system", "set function missing required: 'key1' or 'key2'")
     return kt.RVEINVALID
   end
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   local value1, xt = db:get(key1)
   local value2, xt = db:get(key2)
 
@@ -458,7 +458,7 @@ function lkv(inmap, outmap, fn)
     kt.log("system", "list function missing required: 'key'")
     return kt.RVEINVALID
   end
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   inmap.key = nil
   local value, xt = db:get(key)
   local value_array = {}
@@ -663,7 +663,7 @@ function move(inmap, outmap)
     kt.log("info", "missing src and/or dest key in move() call")
     return kt.RVEINVALID
   end
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   local keys = { src, dest }
   local first = true
   local src_val = nil
@@ -699,7 +699,7 @@ end
 -- accepts: {}
 -- returns: { k=v ... }
 function list(inmap, outmap)
-  _select_db(inmap) -- Allow db to be specified as argument.
+  local db = _select_db(inmap) -- Allow db to be specified as argument.
   local cur = db:cursor()
   cur:jump()
   while true do
@@ -716,7 +716,7 @@ end
 -- accepts: { start: key, stop: key, db: idx }
 -- returns: { k1=v1, k2=v2, ... }
 function get_range(inmap, outmap)
-  _select_db(inmap)
+  local db = _select_db(inmap)
   local start_key = inmap.start
   local stop_key = inmap.stop
   local cur = db:cursor()
