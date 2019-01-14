@@ -100,8 +100,11 @@ class BaseClient(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._protocol.close()
 
+    def open(self):
+        return self._protocol.connect()
+
     def close(self, allow_reuse=True):
-        self._protocol.close(allow_reuse)
+        return self._protocol.close(allow_reuse)
 
     def close_all(self):
         return self._protocol.close_all()
@@ -143,6 +146,10 @@ class KyotoTycoon(BaseClient):
             encode_value=self._encode_value,
             decode_value=self._decode_value,
             default_db=self._default_db)
+
+    def open(self):
+        self._http.connect()
+        return self._protocol.connect()
 
     def close(self, allow_reuse=True):
         self._protocol.close(allow_reuse)

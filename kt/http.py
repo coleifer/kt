@@ -61,7 +61,7 @@ class HttpProtocol(object):
     def _get_conn(self):
         return HTTPConnection(self._host, self._port, timeout=self._timeout)
 
-    def reconnect(self):
+    def connect(self):
         self.close()
         self._conn = self._get_conn()
         self._conn.connect()
