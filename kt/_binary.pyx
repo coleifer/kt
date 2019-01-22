@@ -180,13 +180,14 @@ cdef class SocketPool(object):
         list free
         readonly int port
         readonly str host
-        readonly timeout
+        readonly max_age, timeout
         mutex
 
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port, timeout=None, max_age=600):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.max_age = max_age or 600
         self.in_use = {}
         self.free = []
         self.mutex = threading.Lock()
@@ -206,6 +207,7 @@ cdef class SocketPool(object):
         cdef _Socket sock
 
         tid = get_ident()
+        threshold = time.time() - self.max_age
         with self.mutex:
             if tid in self.in_use:
                 sock = self.in_use[tid]
@@ -215,9 +217,13 @@ cdef class SocketPool(object):
                     return sock
 
             while self.free:
-                _, sock = heapq.heappop(self.free)
-                self.in_use[tid] = sock
-                return sock
+                ts, sock = heapq.heappop(self.free)
+                if ts > threshold:
+                    self.in_use[tid] = sock
+                    return sock
+                else:
+                    # Socket is too old, close.
+                    sock.close()
 
             sock = self.create_socket()
             self.in_use[tid] = sock
