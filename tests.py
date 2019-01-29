@@ -759,6 +759,37 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_rpop(queue='tq'), {})
         self.assertEqual(L.queue_pop(queue='tq'), {})
 
+    def test_hexastore(self):
+        L = self.db.lua
+        data = (
+            ('charlie', 'likes', 'zaizee'),
+            ('charlie', 'likes', 'huey'),
+            ('charlie', 'likes', 'mickey'),
+            ('huey', 'likes', 'zaizee'),
+            ('zaizee', 'likes', 'huey'),
+        )
+        for s, p, o in data:
+            L.hx_add(s=s, p=p, o=o)
+
+        self.assertEqual(self.db.count(), 30)  # 5 * 6.
+        data = L.hx_query(s='charlie', p='likes')
+        self.assertEqual(sorted(data.values()), [
+            'spo::charlie::likes::huey',
+            'spo::charlie::likes::mickey',
+            'spo::charlie::likes::zaizee'])
+
+        L.hx_remove(s='charlie', p='likes', o='mickey')
+        data = L.hx_query(s='charlie', p='likes')
+        self.assertEqual(sorted(data.values()), [
+            'spo::charlie::likes::huey',
+            'spo::charlie::likes::zaizee'])
+
+        data = L.hx_query(o='zaizee')
+        self.assertEqual(sorted(data.values()), [
+            'osp::zaizee::charlie::likes',
+            'osp::zaizee::huey::likes'])
+        self.db.clear()
+
     def test_python_list_integration(self):
         L = self.db.lua
         P = self.db._protocol
