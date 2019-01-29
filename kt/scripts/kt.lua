@@ -916,14 +916,45 @@ end
 
 -- Simple hexastore graph.
 
+-- Python-like string split, with proper handling of edge-cases.
+function nsplit(s, delim, n)
+  n = n or -1
+  local pos, length = 1, #s
+  local parts = {}
+  while pos do
+    local dstart, dend = string.find(s, delim, pos, true)
+    local part
+    if not dstart then
+      part = string.sub(s, pos)
+      pos = nil
+    elseif dend < dstart then
+      part = string.sub(s, pos, dstart)
+      if dstart < length then
+        pos = dstart + 1
+      else
+        pos = nil
+      end
+    else
+      part = string.sub(s, pos, dstart - 1)
+      pos = dend + 1
+    end
+    table.insert(parts, part)
+    n = n - 1
+    if n == 0 and pos then
+      if dend < length then
+        table.insert(parts, string.sub(s, pos))
+      end
+      break
+    end
+  end
+  return parts
+end
+
 function _hx_keys_for_values(s, p, o)
   local perms = {
     {'spo', s, p, o},
-    {'sop', s, o, p},
-    {'pso', p, s, o},
     {'pos', p, o, s},
-    {'osp', o, s, p},
-    {'ops', o, p, s}}
+    {'osp', o, s, p}}
   local output = {}
   for i = 1, #perms do
     output[i] = table.concat(perms[i], '::')
@@ -940,13 +971,13 @@ function _hx_keys_for_query(s, p, o)
   elseif s and p then
     parts = {"spo", s, p}
   elseif s and o then
-    parts = {"sop", s, o}
+    parts = {"osp", s, o}
   elseif p and o then
     parts = {"pos", p, o}
   elseif s then
     parts = {"spo", s}
   elseif p then
-    parts = {"pso", p}
+    parts = {"pos", p}
   elseif o then
     parts = {"osp", o}
   end
@@ -962,10 +993,7 @@ end
 -- add item to hexastore
 -- accepts { s, p, o } (subject, predicate, object)
 function hx_add(inmap, outmap)
-  local db = _select_db(inmap)
-  local s = inmap.s
-  local p = inmap.p
-  local o = inmap.o
+  local db, s, p, o = _select_db(inmap), inmap.s, inmap.p, inmap.o
   if not s or not p or not o then
     kt.log("info", "missing s/p/o parameter in hx_add call")
     return kt.REVINVALID
@@ -982,10 +1010,7 @@ end
 -- remove item from hexastore
 -- accepts { s, p, o }
 function hx_remove(inmap, outmap)
-  local db = _select_db(inmap)
-  local s = inmap.s
-  local p = inmap.p
-  local o = inmap.o
+  local db, s, p, o = _select_db(inmap), inmap.s, inmap.p, inmap.o
   if not s or not p or not o then
     kt.log("info", "missing s/p/o parameter in hx_remove call")
     return kt.REVINVALID
@@ -998,10 +1023,7 @@ end
 -- query hexastore
 -- accepts { s, p, o }
 function hx_query(inmap, outmap)
-  local db = _select_db(inmap)
-  local s = inmap.s
-  local p = inmap.p
-  local o = inmap.o
+  local db, s, p, o = _select_db(inmap), inmap.s, inmap.p, inmap.o
   if not s and not p and not o then
     kt.log("info", "missing s/p/o parameter in hx_query call")
     return kt.REVINVALID
@@ -1025,7 +1047,7 @@ function hx_query(inmap, outmap)
   while true do
     key, value, xt = cursor:get()
     if key > stop then break end
-    outmap[tostring(i)] = key
+    _hx_key_to_table(outmap, key, i, s == nil, p == nil, o == nil)
     i = i + 1
     if not cursor:step() then
       break
@@ -1035,33 +1057,18 @@ function hx_query(inmap, outmap)
   return kt.RVSUCCESS
 end
 
-
--- Python-like string split, with proper handling of edge-cases.
-function nsplit(s, delim, n)
-  n = n or -1
-  local pos, length = 1, #s
-  local parts = {}
-  while n ~= 0 and pos do
-    local dstart, dend = string.find(s, delim, pos, true)
-    local part
-    if not dstart then
-      part = string.sub(s, pos)
-      pos = nil
-    elseif dend < dstart then
-      part = string.sub(s, pos, dstart)
-      if dstart < length then
-        pos = dstart + 1
-      else
-        pos = nil
-      end
-    else
-      part = string.sub(s, pos, dstart - 1)
-      pos = dend + 1
+function _hx_key_to_table(tbl, key, idx, store_s, store_p, store_o)
+  -- internal function for adding the parts of an s/p/o key to a result table.
+  -- only stores the parts indicated (based on the user query).
+  local parts = nsplit(key, "::")
+  local structure = parts[1]  -- e.g., "spo", "ops", "pos".
+  local k
+  for i = 1, 3 do
+    k = string.sub(structure, i, i)  -- e.g., "s", "p" or "o".
+    if (k == 'o' and store_o) or (k == 's' and store_s) or (k == 'p' and store_p) then
+      tbl[k .. tostring(idx)] = parts[i + 1]
     end
-    table.insert(parts, part)
-    n = n - 1
   end
-  return parts
 end
 
 

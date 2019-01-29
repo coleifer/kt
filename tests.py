@@ -771,23 +771,18 @@ class TestKyotoTycoonScripting(BaseTestCase):
         for s, p, o in data:
             L.hx_add(s=s, p=p, o=o)
 
-        self.assertEqual(self.db.count(), 30)  # 5 * 6.
+        self.assertEqual(self.db.count(), 15)  # 5 * 3.
         data = L.hx_query(s='charlie', p='likes')
-        self.assertEqual(sorted(data.values()), [
-            'spo::charlie::likes::huey',
-            'spo::charlie::likes::mickey',
-            'spo::charlie::likes::zaizee'])
+        self.assertEqual(data, {'o0': 'huey', 'o1': 'mickey', 'o2': 'zaizee'})
 
         L.hx_remove(s='charlie', p='likes', o='mickey')
         data = L.hx_query(s='charlie', p='likes')
-        self.assertEqual(sorted(data.values()), [
-            'spo::charlie::likes::huey',
-            'spo::charlie::likes::zaizee'])
+        self.assertEqual(data, {'o0': 'huey', 'o1': 'zaizee'})
 
         data = L.hx_query(o='zaizee')
-        self.assertEqual(sorted(data.values()), [
-            'osp::zaizee::charlie::likes',
-            'osp::zaizee::huey::likes'])
+        self.assertEqual(data, {
+            's0': 'charlie', 'p0': 'likes',
+            's1': 'huey', 'p1': 'likes'})
         self.db.clear()
 
     def test_python_list_integration(self):
