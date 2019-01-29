@@ -855,6 +855,7 @@ function queue_rpop(inmap, outmap)
 
   -- No data, we're done.
   if not cursor:jump_back(max_key) then
+    cursor:disable()
     return kt.RVSUCCESS
   end
 
@@ -873,6 +874,7 @@ function queue_rpop(inmap, outmap)
       break
     end
   end
+  cursor:disable()
   return kt.RVSUCCESS
 end
 
@@ -908,6 +910,128 @@ function queue_clear(inmap, outmap)
   db:remove_bulk(keys)
   db:remove(queue)
   outmap.num = tostring(#keys)
+  return kt.RVSUCCESS
+end
+
+
+-- Simple hexastore graph.
+
+function _hx_keys_for_values(s, p, o)
+  local perms = {
+    {'spo', s, p, o},
+    {'sop', s, o, p},
+    {'pso', p, s, o},
+    {'pos', p, o, s},
+    {'osp', o, s, p},
+    {'ops', o, p, s}}
+  local output = {}
+  for i = 1, #perms do
+    output[i] = table.concat(perms[i], '::')
+  end
+  return output
+end
+
+function _hx_keys_for_query(s, p, o)
+  local parts = {}
+  local key = function(parts) return table.concat(parts, '::') end
+
+  if s and p and o then
+    return key({"spo", s, p, o}), nil
+  elseif s and p then
+    parts = {"spo", s, p}
+  elseif s and o then
+    parts = {"sop", s, o}
+  elseif p and o then
+    parts = {"pos", p, o}
+  elseif s then
+    parts = {"spo", s}
+  elseif p then
+    parts = {"pso", p}
+  elseif o then
+    parts = {"osp", o}
+  end
+  local term = {}
+  for _, value in pairs(parts) do
+    table.insert(term, value)
+  end
+  table.insert(parts, "")
+  table.insert(term, "\255")
+  return key(parts), key(term)
+end
+
+-- add item to hexastore
+-- accepts { s, p, o } (subject, predicate, object)
+function hx_add(inmap, outmap)
+  local db = _select_db(inmap)
+  local s = inmap.s
+  local p = inmap.p
+  local o = inmap.o
+  if not s or not p or not o then
+    kt.log("info", "missing s/p/o parameter in hx_add call")
+    return kt.REVINVALID
+  end
+
+  local data = {}
+  for i, key in pairs(_hx_keys_for_values(s, p, o)) do
+    data[key] = ""
+  end
+  db:set_bulk(data)
+  return kt.RVSUCCESS
+end
+
+-- remove item from hexastore
+-- accepts { s, p, o }
+function hx_remove(inmap, outmap)
+  local db = _select_db(inmap)
+  local s = inmap.s
+  local p = inmap.p
+  local o = inmap.o
+  if not s or not p or not o then
+    kt.log("info", "missing s/p/o parameter in hx_remove call")
+    return kt.REVINVALID
+  end
+
+  db:remove_bulk(_hx_keys_for_values(s, p, o))
+  return kt.RVSUCCESS
+end
+
+-- query hexastore
+-- accepts { s, p, o }
+function hx_query(inmap, outmap)
+  local db = _select_db(inmap)
+  local s = inmap.s
+  local p = inmap.p
+  local o = inmap.o
+  if not s and not p and not o then
+    kt.log("info", "missing s/p/o parameter in hx_query call")
+    return kt.REVINVALID
+  end
+
+  local start, stop = _hx_keys_for_query(s, p, o)
+  if not stop then
+    local value, xt = db:get(start)
+    if value then outmap['0'] = value end
+    return kt.RVSUCCESS
+  end
+
+  local cursor = db:cursor()
+  if not cursor:jump(start) then
+    cursor:disable()
+    return kt.RVSUCCESS
+  end
+
+  local i = 0
+  local key, value, xt
+  while true do
+    key, value, xt = cursor:get()
+    if key > stop then break end
+    outmap[tostring(i)] = key
+    i = i + 1
+    if not cursor:step() then
+      break
+    end
+  end
+  cursor:disable()
   return kt.RVSUCCESS
 end
 
