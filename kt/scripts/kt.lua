@@ -44,8 +44,7 @@ end
 -- returns: { num }
 function hmset(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value, num
-    num = 0
+    local num = 0
     for key, value in pairs(i) do
       v[key] = value
       num = num + 1
@@ -62,7 +61,6 @@ end
 -- returns: { k1=v1, k2=v2, ... }
 function hmget(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value
     for key, value in pairs(i) do
       o[key] = v[key]
     end
@@ -77,8 +75,7 @@ end
 -- returns: { num }
 function hmdel(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value, num
-    num = 0
+    local num = 0
     for key, value in pairs(i) do
       if v[key] then
         num = num + 1
@@ -97,7 +94,6 @@ end
 -- returns: { k1=v1, k2=v2, ... }
 function hgetall(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value
     for key, value in pairs(v) do
       o[key] = value
     end
@@ -315,7 +311,6 @@ end
 -- returns: { v1, v2, ... }
 function smembers(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value
     for key, value in pairs(v) do
       o[key] = '1'
     end
@@ -330,7 +325,6 @@ end
 -- returns: { num, value }
 function spop(inmap, outmap)
   local fn = function(k, v, i, o)
-    local key, value
     o.num = 0
     for key, value in pairs(v) do
       o.num = 1
@@ -404,7 +398,6 @@ end
 -- returns: { ... }
 function sinter(inmap, outmap)
   local fn = function(v1, v2, i, o)
-    local key, val
     for key, val in pairs(v1) do
       if v2[key] ~= nil then
         o[key] = '1'
@@ -421,7 +414,6 @@ end
 -- returns: { ... }
 function sunion(inmap, outmap)
   local fn = function(v1, v2, i, o)
-    local key, val
     for key, val in pairs(v1) do
       o[key] = '1'
     end
@@ -439,7 +431,6 @@ end
 -- returns: { ... }
 function sdiff(inmap, outmap)
   local fn = function(v1, v2, i, o)
-    local key, val
     for key, val in pairs(v1) do
       if v2[key] == nil then
         o[key] = '1'
@@ -751,7 +742,6 @@ end
 -- accepts: { val1: method1, val2: method2, ... }
 -- returns: { val1: hash1, val2: hash2, ... }
 function hash(inmap, outmap)
-  local key, value
   for key, val in pairs(inmap) do
     if val == 'fnv' then
       outmap[key] = kt.hash_fnv(val)
@@ -836,12 +826,51 @@ function queue_pop(inmap, outmap)
   local n = tonumber(inmap.n or 1)
   local key = string.format("%s\t", queue)
   local keys = db:match_prefix(key, n)
-  local i
   for i = 1, #keys do
     local k = keys[i]
     local val = db:get(k)
     if db:remove(k) and val then
       outmap[tostring(i - 1)] = val
+    end
+  end
+  return kt.RVSUCCESS
+end
+
+
+-- pop/dequeue data from the end of the queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_rpop(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  if not queue then
+    kt.log("info", "missing queue parameter in queue_pop call")
+    return kt.RVEINVALID
+  end
+
+  local n = tonumber(inmap.n or 1)
+  local pattern = string.format("^%s\t", queue)
+  local max_key = string.format("%s\t\255", queue)
+  local cursor = db:cursor()
+
+  -- No data, we're done.
+  if not cursor:jump_back(max_key) then
+    return kt.RVSUCCESS
+  end
+
+  local k, v, xt
+  for i = 1, n do
+    -- Retrieve the key, value and xt from the cursor. If the cursor is
+    -- invalidated (e.g., during the remove()), then nil is returned.
+    k, v, xt = cursor:get(false)
+    if not k then break end
+
+    -- If this is a queue item key, we remove the value (which implicitly steps
+    -- to the next key).
+    if k:match(pattern) and cursor:remove() then
+      outmap[tostring(i - 1)] = v
+    else
+      break
     end
   end
   return kt.RVSUCCESS

@@ -741,6 +741,24 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_clear(queue='tq'), {'num': '2'})
         self.assertEqual(L.queue_clear(queue='tq'), {'num': '0'})
 
+        for i in range(6):
+            L.queue_add(queue='tq', data='item-%s' % i)
+
+        result = L.queue_rpop(queue='tq', n=2)
+        self.assertEqual(result, {'0': 'item-5', '1': 'item-4'})
+        self.assertEqual(L.queue_pop(queue='tq'), {'0': 'item-0'})
+        self.assertEqual(L.queue_rpop(queue='tq'), {'0': 'item-3'})
+
+        result = L.queue_rpop(queue='tq', n=4)
+        self.assertEqual(result, {'0': 'item-2', '1': 'item-1'})
+        self.assertEqual(L.queue_rpop(queue='tq'), {})
+        self.assertEqual(L.queue_pop(queue='tq'), {})
+
+        # Test loop termination logic when we have no keys in the db.
+        self.db.clear()
+        self.assertEqual(L.queue_rpop(queue='tq'), {})
+        self.assertEqual(L.queue_pop(queue='tq'), {})
+
     def test_python_list_integration(self):
         L = self.db.lua
         P = self.db._protocol
