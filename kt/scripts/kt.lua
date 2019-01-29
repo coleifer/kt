@@ -1036,6 +1036,35 @@ function hx_query(inmap, outmap)
 end
 
 
+-- Python-like string split, with proper handling of edge-cases.
+function nsplit(s, delim, n)
+  n = n or -1
+  local pos, length = 1, #s
+  local parts = {}
+  while n ~= 0 and pos do
+    local dstart, dend = string.find(s, delim, pos, true)
+    local part
+    if not dstart then
+      part = string.sub(s, pos)
+      pos = nil
+    elseif dend < dstart then
+      part = string.sub(s, pos, dstart)
+      if dstart < length then
+        pos = dstart + 1
+      else
+        pos = nil
+      end
+    else
+      part = string.sub(s, pos, dstart - 1)
+      pos = dend + 1
+    end
+    table.insert(parts, part)
+    n = n - 1
+  end
+  return parts
+end
+
+
 -- get luajit version.
 function jit_version(inmap, outmap)
   outmap.version = "v" .. jit.version
