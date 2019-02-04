@@ -812,6 +812,54 @@ function queue_add(inmap, outmap)
   return kt.RVSUCCESS
 end
 
+
+-- remove data from a queue
+-- accepts: { queue, data, db }
+-- returns { num }
+function queue_remove(inmap, outmap)
+  local db = _select_db(inmap)
+  local queue = inmap.queue
+  local data = inmap.data
+  if not queue or not data then
+    kt.log("info", "missing queue or data parameter in queue_remove call")
+    return kt.RVEINVALID
+  end
+
+  local cursor = db:cursor()
+  local key = string.format("%s\t", queue)
+  local pattern = string.format("^%s\t", queue)
+
+  -- No data, we're done.
+  if not cursor:jump(key) then
+    cursor:disable()
+    outmap['num'] = '0'
+    return kt.RVSUCCESS
+  end
+
+  local k, v, xt
+  local num = 0
+
+  while true do
+    -- Retrieve the key, value and xt from the cursor. If the cursor is
+    -- invalidated (e.g., during the remove()), then nil is returned.
+    k, v, xt = cursor:get(false)
+    if not k then break end
+
+    -- If this is not a queue item key, we are done.
+    if not k:match(pattern) then break end
+
+    -- Data matches value, remove this item from the queue.
+    if data == v and cursor:remove() then
+      num = num + 1
+    elseif not cursor:step() then
+      break
+    end
+  end
+  cursor:disable()
+  outmap['num'] = tostring(num)
+  return kt.RVSUCCESS
+end
+
 -- pop/dequeue data from queue
 -- accepts: { queue, n, db }
 -- returns { idx: data, ... }

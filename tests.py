@@ -759,6 +759,18 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_rpop(queue='tq'), {})
         self.assertEqual(L.queue_pop(queue='tq'), {})
 
+        # Verify we can remove data by value.
+        for i in range(5):
+            L.queue_add(queue='tq', data='i%s' % (i % 2))
+
+        self.assertEqual(L.queue_remove(queue='tq', data='i1'), {'num': '2'})
+        self.assertEqual(L.queue_remove(queue='tq', data='x'), {'num': '0'})
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '3'})
+        self.assertEqual(L.queue_pop(queue='tq'), {'0': 'i0'})
+        self.assertEqual(L.queue_remove(queue='tq', data='i0'), {'num': '2'})
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '0'})
+        self.assertEqual(L.queue_pop(queue='tq'), {})
+
     def test_hexastore(self):
         L = self.db.lua
         data = (
