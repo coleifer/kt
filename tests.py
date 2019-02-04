@@ -781,10 +781,13 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_rpop(queue='tq'), {})
         self.assertEqual(L.queue_pop(queue='tq'), {})
 
-        # Verify we can remove data by value.
-        for i in range(5):
-            L.queue_add(queue='tq', data='i%s' % (i % 2))
+        # Test bulk-add feature.
+        data = {str(i): 'i%s' % (i % 2) for i in range(5)}
+        self.assertEqual(L.queue_madd(queue='tq', **data), {'num': '5'})
+        self.assertEqual(L.queue_peek(queue='tq', n=5), {
+            '0': 'i0', '1': 'i1', '2': 'i0', '3': 'i1', '4': 'i0'})
 
+        # Verify we can remove data by value.
         self.assertEqual(L.queue_remove(queue='tq', data='i1'), {'num': '2'})
         self.assertEqual(L.queue_remove(queue='tq', data='x'), {'num': '0'})
         self.assertEqual(L.queue_size(queue='tq'), {'num': '3'})

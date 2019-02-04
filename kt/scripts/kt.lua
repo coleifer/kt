@@ -823,6 +823,32 @@ function queue_add(inmap, outmap)
 end
 
 
+-- add/enqueue multiple items to a queue
+-- accepts: { queue, 0: data0, 1: data1, ... n: dataN, db }
+-- returns { num }
+function queue_madd(inmap, outmap)
+  local fn = function(db, i, o)
+    local n = 0
+    while i[tostring(n)] ~= nil do
+      local id = db:increment_double(i.queue, 1)
+      if not id then
+        kt.log("info", "unable to determine id when adding item to queue!")
+        return kt.RVELOGIC
+      end
+      local key = string.format("%s\t%012d", i.queue, id)
+      if not db:add(key, i[tostring(n)]) then
+        kt.log("info", "could not add key, already exists")
+        return kt.RVELOGIC
+      end
+      n = n + 1
+    end
+    o.num = n
+    return kt.RVSUCCESS
+  end
+  return _qfn(inmap, outmap, {"queue"}, fn)
+end
+
+
 function _queue_iter(db, queue, n, callback)
   -- Perform a forward iteration through the queue (up to "n" items). The
   -- user-defined callback returns a 2-tuple of (ok, incr) to signal that we
