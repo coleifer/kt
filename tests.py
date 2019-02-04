@@ -22,6 +22,7 @@ from kt import QueryBuilder
 from kt import TokyoTyrant
 from kt import TT_TABLE
 from kt import constants
+from kt.queue import Queue
 
 
 class BaseTestCase(unittest.TestCase):
@@ -813,6 +814,40 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_peek(queue='tq', n=10), {
             '0': 'i0', '1': 'i1', '2': 'i2', '3': 'i2', '4': 'i2'})
         self.assertEqual(L.queue_clear(queue='tq'), {'num': '5'})
+
+    def test_queue_helper(self):
+        qa = Queue(self.db, 'qa')
+        qb = Queue(self.db, 'qb')
+
+        for i in range(20):
+            qa.add('i%s' % i)
+            qb.add('i%s' % (i % 4))
+
+        self.assertEqual(len(qa), 20)
+        self.assertEqual(len(qb), 20)
+
+        self.assertEqual(qa.pop(), 'i0')
+        self.assertEqual(qa.rpop(), 'i19')
+        self.assertEqual(qa.pop(n=3), ['i1', 'i2', 'i3'])
+        self.assertEqual(qa.rpop(n=3), ['i18', 'i17', 'i16'])
+        self.assertEqual(qa.peek(n=3), ['i4', 'i5', 'i6'])
+        self.assertEqual(qa.rpeek(n=3), ['i15', 'i14', 'i13'])
+
+        # i0, i1, i2, i3 ... x5.
+        self.assertEqual(qb.remove('i1', n=4), 4)
+        self.assertEqual(qb.rremove('i2', n=4), 4)
+        self.assertEqual(len(qb), 12)
+        self.assertEqual(qb.peek(20), ['i0', 'i2', 'i3', 'i0', 'i3', 'i0',
+                                       'i3', 'i0', 'i3', 'i0', 'i1', 'i3'])
+        self.assertEqual(qb.remove('i3', n=5), 5)
+        self.assertEqual(qb.remove('i0', n=10), 5)
+        self.assertEqual(qb.pop(), 'i2')
+        self.assertEqual(qb.pop(), 'i1')
+        self.assertEqual(len(qb), 0)
+
+        self.assertEqual(qa.remove('i7'), 1)
+        self.assertEqual(qa.remove('i7'), 0)
+        self.assertEqual(qa.pop(n=5), ['i4', 'i5', 'i6', 'i8', 'i9'])
 
     def test_hexastore(self):
         L = self.db.lua
