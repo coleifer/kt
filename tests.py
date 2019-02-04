@@ -724,16 +724,25 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(result, {'0': 'item-0'})
         self.assertEqual(L.queue_size(queue='tq'), {'num': '4'})
 
-        # We can dequeue multiple items, which are newline-separated.
+        # We can also peek at items.
+        self.assertEqual(L.queue_peek(queue='tq'), {'0': 'item-1'})
+        self.assertEqual(L.queue_peek(queue='tq', n=2),
+                         {'0': 'item-1', '1': 'item-2'})
+
+        # We can dequeue multiple items.
         result = L.queue_pop(queue='tq', n=3)
         self.assertEqual(result, {'0': 'item-1', '1': 'item-2', '2': 'item-3'})
 
-        # It's OK if fewer items exist.
+        # Peek when fewer items exist:
+        self.assertEqual(L.queue_peek(queue='tq', n=3), {'0': 'item-4'})
+
+        # It's OK to pop if fewer items exist.
         result = L.queue_pop(queue='tq', n=3)
         self.assertEqual(result, {'0': 'item-4'})
 
         # No items -> empty string and zero count.
         self.assertEqual(L.queue_pop(queue='tq'), {})
+        self.assertEqual(L.queue_peek(queue='tq'), {})
         self.assertEqual(L.queue_size(queue='tq'), {'num': '0'})
 
         L.queue_add(queue='tq', data='item-y')
@@ -744,11 +753,24 @@ class TestKyotoTycoonScripting(BaseTestCase):
         for i in range(6):
             L.queue_add(queue='tq', data='item-%s' % i)
 
+        # Reverse-peek.
+        self.assertEqual(L.queue_rpeek(queue='tq'), {'0': 'item-5'})
+        self.assertEqual(L.queue_rpeek(queue='tq', n=2),
+                         {'0': 'item-5', '1': 'item-4'})
+
+        # Reverse-pop.
         result = L.queue_rpop(queue='tq', n=2)
         self.assertEqual(result, {'0': 'item-5', '1': 'item-4'})
         self.assertEqual(L.queue_pop(queue='tq'), {'0': 'item-0'})
+        self.assertEqual(L.queue_peek(queue='tq'), {'0': 'item-1'})
         self.assertEqual(L.queue_rpop(queue='tq'), {'0': 'item-3'})
+        self.assertEqual(L.queue_rpeek(queue='tq'), {'0': 'item-2'})
 
+        # We can request more items than exist with rpeek.
+        self.assertEqual(L.queue_rpeek(queue='tq', n=4),
+                         {'0': 'item-2', '1': 'item-1'})
+
+        # We can attempt to reverse-pop more items than exist:
         result = L.queue_rpop(queue='tq', n=4)
         self.assertEqual(result, {'0': 'item-2', '1': 'item-1'})
         self.assertEqual(L.queue_rpop(queue='tq'), {})
@@ -766,10 +788,28 @@ class TestKyotoTycoonScripting(BaseTestCase):
         self.assertEqual(L.queue_remove(queue='tq', data='i1'), {'num': '2'})
         self.assertEqual(L.queue_remove(queue='tq', data='x'), {'num': '0'})
         self.assertEqual(L.queue_size(queue='tq'), {'num': '3'})
+
+        # We can specify a limit on the number of items removed.
+        self.assertEqual(L.queue_remove(queue='tq', data='i0', n=2),
+                         {'num': '2'})
+        self.assertEqual(L.queue_size(queue='tq'), {'num': '1'})
         self.assertEqual(L.queue_pop(queue='tq'), {'0': 'i0'})
-        self.assertEqual(L.queue_remove(queue='tq', data='i0'), {'num': '2'})
-        self.assertEqual(L.queue_size(queue='tq'), {'num': '0'})
-        self.assertEqual(L.queue_pop(queue='tq'), {})
+
+        # Verify remove-by-value, reverse.
+        for i in range(10):
+            # i0, i1, i2, i0, i1, i2, i0, i1, i2, i0
+            L.queue_add(queue='tq', data='i%s' % (i % 3))
+
+        self.assertEqual(L.queue_rremove(queue='tq', data='i0', n=3),
+                         {'num': '3'})
+        self.assertEqual(L.queue_peek(queue='tq', n=10), {
+            '0': 'i0', '1': 'i1', '2': 'i2', '3': 'i1', '4': 'i2',
+            '5': 'i1', '6': 'i2'})
+        self.assertEqual(L.queue_rremove(queue='tq', data='i1', n=2),
+                         {'num': '2'})
+        self.assertEqual(L.queue_peek(queue='tq', n=10), {
+            '0': 'i0', '1': 'i1', '2': 'i2', '3': 'i2', '4': 'i2'})
+        self.assertEqual(L.queue_clear(queue='tq'), {'num': '5'})
 
     def test_hexastore(self):
         L = self.db.lua

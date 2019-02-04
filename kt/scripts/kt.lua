@@ -786,45 +786,48 @@ end
 
 
 -- Queue helpers.
---
+
+-- Simple wrapper that does some basic validation and dispatches to the
+-- user-defined callback.
+function _qfn(inmap, outmap, required, fn)
+  local db = _select_db(inmap)
+  for i, key in pairs(required) do
+    if not inmap[key] then
+      kt.log("info", "queue: missing required parameter: " .. key)
+      return kt.RVEINVALID
+    end
+  end
+  return fn(db, inmap, outmap)
+end
+
+
 -- add/enqueue data to a queue
 -- accepts: { queue, data, db }
 -- returns { id }
 function queue_add(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  local data = inmap.data
-  if not queue or not data then
-    kt.log("info", "missing queue or data parameter in queue_add call")
-    return kt.RVEINVALID
+  local fn = function(db, i, o)
+    local id = db:increment_double(i.queue, 1)
+    if not id then
+      kt.log("info", "unable to determine id when adding item to queue!")
+      return kt.RVELOGIC
+    end
+    local key = string.format("%s\t%012d", i.queue, id)
+    if not db:add(key, i.data) then
+      kt.log("info", "could not add key, already exists")
+      return kt.RVELOGIC
+    end
+    o.id = id
+    return kt.RVSUCCESS
   end
-  local id = db:increment_double(queue, 1)
-  if not id then
-    kt.log("info", "unable to determine id when adding item to queue!")
-    return kt.RVELOGIC
-  end
-  local key = string.format("%s\t%012d", queue, id)
-  if not db:add(key, data) then
-    kt.log("info", "could not add key, already exists")
-    return kt.RVELOGIC
-  end
-  outmap.id = id
-  return kt.RVSUCCESS
+  return _qfn(inmap, outmap, {"queue", "data"}, fn)
 end
 
 
--- remove data from a queue
--- accepts: { queue, data, db }
--- returns { num }
-function queue_remove(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  local data = inmap.data
-  if not queue or not data then
-    kt.log("info", "missing queue or data parameter in queue_remove call")
-    return kt.RVEINVALID
-  end
-
+function _queue_iter(db, queue, n, callback)
+  -- Perform a forward iteration through the queue (up to "n" items). The
+  -- user-defined callback returns a 2-tuple of (ok, incr) to signal that we
+  -- should continue looping, and to increment the counter, respectively.
+  local num = 0
   local cursor = db:cursor()
   local key = string.format("%s\t", queue)
   local pattern = string.format("^%s\t", queue)
@@ -832,112 +835,196 @@ function queue_remove(inmap, outmap)
   -- No data, we're done.
   if not cursor:jump(key) then
     cursor:disable()
-    outmap['num'] = '0'
-    return kt.RVSUCCESS
+    return num
   end
 
-  local k, v, xt
-  local num = 0
+  local k, v, xt, ok, incr
 
-  while true do
+  while n ~= 0 do
     -- Retrieve the key, value and xt from the cursor. If the cursor is
-    -- invalidated (e.g., during the remove()), then nil is returned.
+    -- invalidated then nil is returned.
     k, v, xt = cursor:get(false)
     if not k then break end
 
     -- If this is not a queue item key, we are done.
     if not k:match(pattern) then break end
 
-    -- Data matches value, remove this item from the queue.
-    if data == v and cursor:remove() then
+    -- Pass control to the user-defined function, which is responsible for
+    -- stepping the cursor.
+    ok, incr = callback(cursor, k, v, num)
+    if not ok then break end
+
+    if incr then
       num = num + 1
-    elseif not cursor:step() then
-      break
+      n = n - 1
     end
   end
+
   cursor:disable()
-  outmap['num'] = tostring(num)
-  return kt.RVSUCCESS
-end
-
--- pop/dequeue data from queue
--- accepts: { queue, n, db }
--- returns { idx: data, ... }
-function queue_pop(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  if not queue then
-    kt.log("info", "missing queue parameter in queue_pop call")
-    return kt.RVEINVALID
-  end
-
-  local n = tonumber(inmap.n or 1)
-  local key = string.format("%s\t", queue)
-  local keys = db:match_prefix(key, n)
-  for i = 1, #keys do
-    local k = keys[i]
-    local val = db:get(k)
-    if db:remove(k) and val then
-      outmap[tostring(i - 1)] = val
-    end
-  end
-  return kt.RVSUCCESS
+  return num
 end
 
 
--- pop/dequeue data from the end of the queue
--- accepts: { queue, n, db }
--- returns { idx: data, ... }
-function queue_rpop(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  if not queue then
-    kt.log("info", "missing queue parameter in queue_pop call")
-    return kt.RVEINVALID
-  end
-
-  local n = tonumber(inmap.n or 1)
-  local pattern = string.format("^%s\t", queue)
-  local max_key = string.format("%s\t\255", queue)
+function _queue_iter_reverse(db, queue, n, callback)
+  -- Perform a backward iteration through the queue (up to "n" items). The
+  -- user-defined callback returns a 2-tuple of (ok, incr) to signal that we
+  -- should continue looping, and to increment the counter, respectively.
+  local num = 0
   local cursor = db:cursor()
+  local max_key = string.format("%s\t\255", queue)
+  local pattern = string.format("^%s\t", queue)
 
   -- No data, we're done.
   if not cursor:jump_back(max_key) then
     cursor:disable()
-    return kt.RVSUCCESS
+    return num
   end
 
-  local k, v, xt
-  for i = 1, n do
+  local k, v, xt, ok, incr
+
+  while n ~= 0 do
     -- Retrieve the key, value and xt from the cursor. If the cursor is
-    -- invalidated (e.g., during the remove()), then nil is returned.
+    -- invalidated then nil is returned.
     k, v, xt = cursor:get(false)
     if not k then break end
 
     -- If this is a queue item key, we remove the value (which implicitly steps
     -- to the next key).
-    if k:match(pattern) and cursor:remove() then
-      outmap[tostring(i - 1)] = v
-    else
-      break
+    if not k:match(pattern) then break end
+
+    ok, incr = callback(cursor, k, v, num)
+    if not ok then break end
+
+    if incr then
+      num = num + 1
+      n = n - 1
     end
   end
+
   cursor:disable()
-  return kt.RVSUCCESS
+  return num
 end
+
+
+-- Remove items from a queue based on value (up-to "n" items).
+-- accepts: { queue, data, db, n }
+-- returns { num }
+function queue_remove(inmap, outmap)
+  local cb = function(db, i, o)
+    local queue = i.queue
+    local data = i.data
+    local n = tonumber(i.n or -1)
+    local iter_cb = function(cursor, k, v, num)
+      if data == v then
+        return cursor:remove(), true
+      else
+        return cursor:step(), false
+      end
+    end
+    outmap.num = _queue_iter(db, queue, n, iter_cb)
+    return kt.RVSUCCESS
+  end
+  return _qfn(inmap, outmap, {"queue", "data"}, cb)
+end
+
+
+-- Remove items from the back of a queue, based on value (up-to "n" items).
+-- accepts: { queue, data, db, n }
+-- returns { num }
+function queue_rremove(inmap, outmap)
+  local cb = function(db, i, o)
+    local queue = i.queue
+    local data = i.data
+    local n = tonumber(i.n or -1)
+    local iter_cb = function(cursor, k, v, num)
+      if data == v then
+        return cursor:remove(), true
+      else
+        return cursor:step_back(), false
+      end
+    end
+    outmap.num = _queue_iter_reverse(db, queue, n, iter_cb)
+    return kt.RVSUCCESS
+  end
+  return _qfn(inmap, outmap, {"queue", "data"}, cb)
+end
+
+
+-- pop/dequeue data from queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_pop(inmap, outmap)
+  local cb = function(db, i, o)
+    local n = tonumber(i.n or 1)
+    local iter_cb = function(cursor, key, value, num)
+      o[tostring(num)] = value
+      return cursor:remove(), true
+    end
+    _queue_iter(db, i.queue, n, iter_cb)
+  end
+  return _qfn(inmap, outmap, {"queue"}, cb)
+end
+
+
+-- pop/dequeue data from end of queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_rpop(inmap, outmap)
+  local cb = function(db, i, o)
+    local n = tonumber(i.n or 1)
+    local iter_cb = function(cursor, key, value, num)
+      o[tostring(num)] = value
+      return cursor:remove(), true
+    end
+    _queue_iter_reverse(db, i.queue, n, iter_cb)
+  end
+  return _qfn(inmap, outmap, {"queue"}, cb)
+end
+
+
+-- peek data from queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_peek(inmap, outmap)
+  local cb = function(db, i, o)
+    local n = tonumber(i.n or 1)
+    local iter_cb = function(cursor, key, value, num)
+      o[tostring(num)] = value
+      return cursor:step(), true
+    end
+    _queue_iter(db, i.queue, n, iter_cb)
+  end
+  return _qfn(inmap, outmap, {"queue"}, cb)
+end
+
+
+-- peek data from end of queue
+-- accepts: { queue, n, db }
+-- returns { idx: data, ... }
+function queue_rpeek(inmap, outmap)
+  local cb = function(db, i, o)
+    local n = tonumber(i.n or 1)
+    local iter_cb = function(cursor, key, value, num)
+      o[tostring(num)] = value
+      return cursor:step_back(), true
+    end
+    _queue_iter_reverse(db, i.queue, n, iter_cb)
+  end
+  return _qfn(inmap, outmap, {"queue"}, cb)
+end
+
 
 -- get queue size
 -- accepts: { queue, db }
 -- returns: { num }
 function queue_size(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  if not queue then
+  if not inmap.queue then
     kt.log("info", "missing queue parameter in queue_size call")
     return kt.RVEINVALID
   end
 
-  local keys = db:match_prefix(string.format("%s\t", queue))
+  local db = _select_db(inmap)
+  local keys = db:match_prefix(string.format("%s\t", inmap.queue))
   outmap.num = tostring(#keys)
   return kt.RVSUCCESS
 end
@@ -947,16 +1034,15 @@ end
 -- accepts: { queue, db }
 -- returns: { num }
 function queue_clear(inmap, outmap)
-  local db = _select_db(inmap)
-  local queue = inmap.queue
-  if not queue then
+  if not inmap.queue then
     kt.log("info", "missing queue parameter in queue_size call")
     return kt.RVEINVALID
   end
 
-  local keys = db:match_prefix(string.format("%s\t", queue))
+  local db = _select_db(inmap)
+  local keys = db:match_prefix(string.format("%s\t", inmap.queue))
   db:remove_bulk(keys)
-  db:remove(queue)
+  db:remove(inmap.queue)
   outmap.num = tostring(#keys)
   return kt.RVSUCCESS
 end
