@@ -166,7 +166,10 @@ cdef class _Socket(object):
             return False
 
         self.is_closed = True
-        self._socket.shutdown(socket.SHUT_RDWR)
+        try:
+            self._socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         self._socket.close()
 
         self.purge()
